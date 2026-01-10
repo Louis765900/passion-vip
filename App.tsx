@@ -1,10 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 // --- CONFIGURATION SÉCURITÉ & CLÉS ---
-// Le code essaie d'abord de lire le fichier .env, sinon il utilise les clés en dur (secours)
 const API_KEYS = {
-  // On ne met plus les clés ici. Le code ira les chercher dans le fichier .env (sécurisé)
-  // ou renverra une erreur si elles manquent.
   FOOTBALL_DATA: import.meta.env.VITE_FOOTBALL_DATA_KEY || "", 
   GROQ: import.meta.env.VITE_GROQ_KEY || "",
   ODDS_API: import.meta.env.VITE_ODDS_API_KEY || ""
@@ -28,23 +25,27 @@ function App() {
   // UI & Mobile
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [activeBetsList, setActiveBetsList] = useState([]);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768); // Détection Mobile
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
-  // 1. GESTION DU RESPONSIVE (MOBILE)
+  // 1. GESTION DU RESPONSIVE
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 2. CHARGEMENT DONNÉES + AUTO-REFRESH (LIVE)
+  // 2. CHARGEMENT DONNÉES (AVEC LE FIX CORS/PROXY)
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Fetch Matchs
-        const response = await fetch("https://api.football-data.org/v4/matches", {
+        // --- LE FIX EST ICI : On ajoute le Proxy devant l'URL ---
+        const proxyUrl = "https://corsproxy.io/?";
+        const targetUrl = "https://api.football-data.org/v4/matches";
+        
+        const response = await fetch(proxyUrl + encodeURIComponent(targetUrl), {
           headers: { "X-Auth-Token": API_KEYS.FOOTBALL_DATA },
         });
+        
         const data = await response.json();
         const validMatches = data.matches?.filter(m => m.status !== "CANCELLED") || [];
         setMatches(validMatches);
@@ -62,12 +63,12 @@ function App() {
         if (activeBets.length > 0) {
             for (let bet of activeBets) {
                 try {
-                    // On cherche le match dans les nouvelles données fraîches
                     let matchData = validMatches.find(m => m.id === bet.matchId);
                     
+                    // Si pas trouvé dans la liste globale, on fetch le détail (aussi via Proxy)
                     if (!matchData) {
-                        // Fallback si match pas dans la liste principale
-                        const matchRes = await fetch(`https://api.football-data.org/v4/matches/${bet.matchId}`, {
+                        const detailUrl = `https://api.football-data.org/v4/matches/${bet.matchId}`;
+                        const matchRes = await fetch(proxyUrl + encodeURIComponent(detailUrl), {
                              headers: { "X-Auth-Token": API_KEYS.FOOTBALL_DATA },
                         });
                         matchData = await matchRes.json();
@@ -103,16 +104,14 @@ function App() {
       } catch (err) { console.error(err); setLoading(false); }
     };
 
-    // Chargement initial
     loadData();
 
-    // 🔄 AUTO-REFRESH : Relance loadData toutes les 60 secondes (60000 ms)
     const interval = setInterval(() => {
         console.log("🔄 Actualisation des scores...");
         loadData();
     }, 60000);
 
-    return () => clearInterval(interval); // Nettoyage quand on quitte
+    return () => clearInterval(interval);
   }, []);
 
 
@@ -173,7 +172,6 @@ function App() {
 
   const toggleReveal = (id) => { setRevealedIds(prev => ({ ...prev, [id]: !prev[id] })); };
 
-  // Helper Statut
   const getBetStatusLabel = (bet, match) => {
       if (!match) return "Chargement...";
       if (match.status === "SCHEDULED" || match.status === "TIMED") return "📅 À venir";
@@ -183,67 +181,24 @@ function App() {
           if ((bet.type === "HOME_WIN" && h > a) || (bet.type === "AWAY_WIN" && a > h) || (bet.type === "DRAW" && h === a)) w = true;
           return w ? "✅ GAGNÉ" : "❌ PERDU";
       }
-      // Live
       if (bet.type === "HOME_WIN") return h > a ? <span style={{color:"#2ea043"}}>🟢 Gagne</span> : <span style={{color:"#da3633"}}>🔴 Perd</span>;
       if (bet.type === "AWAY_WIN") return a > h ? <span style={{color:"#2ea043"}}>🟢 Gagne</span> : <span style={{color:"#da3633"}}>🔴 Perd</span>;
       return <span style={{color:"#fff"}}>En cours</span>;
   };
 
-  // --- STYLES RESPONSIVE ---
   const styles = {
-    container: { 
-        backgroundImage: "url('https://images.unsplash.com/photo-1629255869408-725d2e7b57b1?q=80&w=2070&auto=format&fit=crop')",
-        backgroundSize: "cover", backgroundPosition: "center", backgroundAttachment: "fixed",
-        minHeight: "100vh", fontFamily: "'Inter', sans-serif"
-    },
+    container: { backgroundImage: "url('https://images.unsplash.com/photo-1629255869408-725d2e7b57b1?q=80&w=2070&auto=format&fit=crop')", backgroundSize: "cover", backgroundPosition: "center", backgroundAttachment: "fixed", minHeight: "100vh", fontFamily: "'Inter', sans-serif" },
     overlay: { backgroundColor: "rgba(9, 11, 16, 0.90)", minHeight: "100vh", paddingBottom: "50px", color: "#e0e0e0" },
-    
-    // Header adapté Mobile
-    statsBar: { 
-        backgroundColor: "rgba(0, 0, 0, 0.9)", borderBottom: "1px solid rgba(255, 255, 255, 0.1)", backdropFilter: "blur(10px)",
-        padding: isMobile ? "10px" : "15px 20px", 
-        display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px",
-        fontSize: isMobile ? "0.75rem" : "0.9rem",
-        position: "sticky", top: 0, zIndex: 100 // Fixe en haut sur mobile
-    },
-    
-    // Logo adapté
+    statsBar: { backgroundColor: "rgba(0, 0, 0, 0.9)", borderBottom: "1px solid rgba(255, 255, 255, 0.1)", backdropFilter: "blur(10px)", padding: isMobile ? "10px" : "15px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", fontSize: isMobile ? "0.75rem" : "0.9rem", position: "sticky", top: 0, zIndex: 100 },
     logoText: { fontSize: isMobile ? "1.5rem" : "2rem", fontWeight: "900", letterSpacing: "-2px", color: "#fff", textShadow: "0 0 20px rgba(0, 224, 255, 0.5)" },
     accent: { color: "#00E0FF" }, 
-    
-    // Grille Responsive
-    grid: { 
-        display: "flex", flexDirection: "column", gap: "15px", 
-        maxWidth: "900px", margin: "0 auto", 
-        padding: isMobile ? "0 10px" : "0 20px" // Moins de marge sur mobile
-    },
-
-    // Ticket Section Responsive
-    ticketSection: { 
-        backgroundColor: "rgba(22, 27, 34, 0.6)", backdropFilter: "blur(12px)", 
-        border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", 
-        padding: isMobile ? "20px" : "30px", // Moins de padding sur mobile
-        margin: "0 auto 30px auto", maxWidth: "800px", textAlign: "center", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.5)"
-    },
-    
-    // Carte Match Responsive
-    card: { 
-        padding: "15px 20px", 
-        display: "grid", 
-        // Sur mobile : 3 lignes (Temps / Score / Bouton) au lieu de colonnes
-        gridTemplateColumns: isMobile ? "1fr 3fr" : "0.8fr 3.5fr 1fr", 
-        alignItems: "center", gap: "10px" 
-    },
-    
-    // Ajustements Mobile
+    grid: { display: "flex", flexDirection: "column", gap: "15px", maxWidth: "900px", margin: "0 auto", padding: isMobile ? "0 10px" : "0 20px" },
+    ticketSection: { backgroundColor: "rgba(22, 27, 34, 0.6)", backdropFilter: "blur(12px)", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: isMobile ? "20px" : "30px", margin: "0 auto 30px auto", maxWidth: "800px", textAlign: "center", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.5)" },
+    card: { padding: "15px 20px", display: "grid", gridTemplateColumns: isMobile ? "1fr 3fr" : "0.8fr 3.5fr 1fr", alignItems: "center", gap: "10px" },
     teamName: { fontWeight: "700", fontSize: isMobile ? "0.85rem" : "0.95rem", color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
     scores: { fontWeight: "800", fontSize: "1.2rem", color:"#00E0FF", backgroundColor: "rgba(0,0,0,0.4)", padding: "8px 12px", borderRadius: "8px", minWidth: isMobile ? "60px" : "80px", textAlign: "center", whiteSpace: "nowrap" },
-    
-    // Boutons
     btnGenerate: { background: "linear-gradient(135deg, #00E0FF 0%, #0099FF 100%)", color: "#000", border: "none", padding: "14px 28px", fontSize: "1rem", fontWeight: "900", borderRadius: "8px", cursor: "pointer", width:"100%", textTransform: "uppercase", boxShadow: "0 0 20px rgba(0, 224, 255, 0.4)" },
     btnAnalyze: { backgroundColor: "transparent", border: "1px solid #444", color: "#aaa", padding: "8px 16px", borderRadius: "6px", cursor: "pointer", fontSize: "0.75rem", fontWeight: "bold", width: "100%", marginTop: isMobile ? "10px" : "0" },
-    
-    // Divers
     modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.9)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "center" },
     modalContent: { backgroundColor: "#161b22", border: "1px solid #30363d", borderRadius: "12px", padding: "25px", width: "90%", maxWidth: "600px", maxHeight: "80vh", overflowY: "auto" },
     ticketResultBox: { marginTop: "25px", textAlign: "left", backgroundColor: "rgba(0, 0, 0, 0.6)", padding: "20px", borderRadius: "12px", borderLeft: "4px solid #00E0FF", whiteSpace: "pre-wrap", fontFamily: "'Inter', sans-serif", color: "#fff", lineHeight: "1.6", fontSize: "0.9rem" },
@@ -261,32 +216,26 @@ function App() {
   return (
     <div style={styles.container}>
       <div style={styles.overlay}>
-        
-        {/* BARRE STATS (Responsive) */}
         <div style={styles.statsBar}>
-          {/* Sur mobile, on cache les textes trop longs */}
           <div style={styles.statItem}>🏆 <span style={{color:"#2ea043"}}>{stats.wins}</span></div>
           <div style={styles.statItem}>❌ <span style={{color:"#da3633"}}>{stats.losses}</span></div>
-          
           <button style={{...styles.btnAnalyze, backgroundColor:"rgba(255, 193, 7, 0.1)", border:"1px solid #ffc107", color:"#ffc107", marginTop:0, width:"auto"}} onClick={() => setShowPendingModal(true)}>
              ⏳ {stats.pending} {isMobile ? "" : "EN COURS"}
           </button>
-          
           <div style={styles.statItem}>{isMobile ? "WR:" : "RÉUSSITE:"} <span style={{color:"#fff"}}>{winRate}%</span></div>
         </div>
 
-        {/* MODAL PARIS EN COURS */}
         {showPendingModal && (
             <div style={styles.modalOverlay} onClick={() => setShowPendingModal(false)}>
                 <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
                     <div style={{display:"flex", justifyContent:"space-between", marginBottom:"20px"}}>
-                        <h3 style={{margin:0, color:"#fff"}}>🎫 Paris en cours (Live Update)</h3>
+                        <h3 style={{margin:0, color:"#fff"}}>🎫 Paris en cours</h3>
                         <button onClick={() => setShowPendingModal(false)} style={{background:"none", border:"none", color:"#fff", cursor:"pointer", fontSize:"1.2rem"}}>✕</button>
                     </div>
                     {activeBetsList.length === 0 ? <p style={{color:"#888", textAlign:"center"}}>Aucun pari actif.</p> : activeBetsList.map((bet, idx) => {
                         const match = matches.find(m => m.id === bet.matchId);
                         return (
-                            <div key={idx} style={{...styles.betRow, flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? "5px" : "0"}}>
+                            <div key={idx} style={{...styles.betRow, flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? "5px" : "0", padding:"10px", borderBottom:"1px solid #333"}}>
                                 <div>
                                     <div style={{fontWeight:"bold", color:"#fff"}}>{match ? `${match.homeTeam.name} vs ${match.awayTeam.name}` : `Match ${bet.matchId}`}</div>
                                     <div style={{color:"#888", fontSize:"0.8rem"}}>Pari : {bet.type}</div>
@@ -299,12 +248,11 @@ function App() {
             </div>
         )}
 
-        <header style={{...styles.header, flexDirection: isMobile ? "column" : "row", gap: isMobile ? "10px" : "0"}}>
+        <header style={{...styles.statsBar, background:"transparent", borderBottom:"none", position:"relative", marginBottom:"10px", justifyContent:"center"}}>
           <div style={styles.logoText}>PASSION<span style={styles.accent}>VIP</span></div>
         </header>
 
         <div style={styles.grid}>
-          {/* GENERATEUR PREMIUM */}
           <div style={styles.ticketSection}>
               <h2 style={{marginTop:0, color:"#fff", fontSize: isMobile ? "1.2rem" : "1.5rem", textTransform:"uppercase", letterSpacing:"1px", marginBottom:"20px"}}>💎 Espace VIP Prédictions</h2>
               <button style={styles.btnGenerate} onClick={generateTicket} disabled={loadingTicket}>
@@ -325,13 +273,10 @@ function App() {
           {!loading && matches.map((match) => (
             <div key={match.id} style={styles.cardWrapper}>
               <div style={styles.card}>
-                {/* 1. Date/Info (A gauche sur PC, En haut sur Mobile) */}
                 <div style={{fontSize: "0.75rem", color: "#aaa", textTransform:"uppercase", gridColumn: isMobile ? "1 / span 2" : "auto"}}>
                   <span style={{color:"#fff", fontWeight:"bold"}}>{match.competition.name}</span>
                   <br/>{match.status === "IN_PLAY" || match.status === "PAUSED" ? <span style={{color:"#ff4b4b", fontWeight:"900"}}>LIVE {match.minute}'</span> : formatTime(match.utcDate)}
                 </div>
-
-                {/* 2. Le Match (Au centre sur PC, en dessous sur Mobile) */}
                 <div style={{...styles.matchContent, gridColumn: isMobile ? "1 / span 2" : "auto"}}>
                   <div style={{...styles.team, justifyContent: "flex-end", textAlign:"right"}}>
                     {!isMobile && <span style={styles.teamName}>{match.homeTeam.name}</span>}
@@ -347,15 +292,12 @@ function App() {
                     {isMobile && <span style={{...styles.teamName, fontSize:"0.8rem"}}>{match.awayTeam.tla || match.awayTeam.name.substring(0,3)}</span>}
                   </div>
                 </div>
-
-                {/* 3. Bouton Analyse (A droite sur PC, En bas sur Mobile) */}
                 <div style={{gridColumn: isMobile ? "1 / span 2" : "auto"}}>
                     <button onClick={() => handleAnalyzeMatch(match)} style={styles.btnAnalyze}>
                         {analyses[match.id] ? (revealedIds[match.id] ? "Fermer" : "VOIR") : "Analyse"}
                     </button>
                 </div>
               </div>
-
               {analyses[match.id] && (
                 <div style={styles.aiBox}>
                     {!revealedIds[match.id] ? (
