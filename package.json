@@ -9,11 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
     "@google/generative-ai": "^0.21.0",
+    "framer-motion": "^12.25.0",
     "groq-sdk": "^0.7.0",
     "lucide-react": "^0.460.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
     "recharts": "^2.13.0"
   },
   "devDependencies": {

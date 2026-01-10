@@ -1,0 +1,37 @@
+:root {
+  /* COULEURS HYBRIDES */
+  --bg-dark: #0F172A;       /* Fond Fintech (Slate 900) */
+  --card-glass: rgba(30, 41, 59, 0.70); /* Verre fumé */
+  --neon-blue: #00D9FF;     /* Accent 1 */
+  --neon-green: #00FF7F;    /* Accent 2 */
+  --text-main: #F8FAFC;     /* Blanc cassé (plus doux) */
+  --text-muted: #94A3B8;    /* Gris bleuté */
+  font-family: 'Inter', sans-serif;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  /* Fond subtil avec un dégradé très léger pour la profondeur */
+  background-image: 
+    radial-gradient(circle at 10% 20%, rgba(0, 217, 255, 0.05) 0%, transparent 20%),
+    radial-gradient(circle at 90% 80%, rgba(0, 255, 127, 0.05) 0%, transparent 20%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar invisible mais fonctionnelle (Style App Mobile) */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
+
+/* Effet Glassmorphism Standard */
+.glass-panel {
+  background: var(--card-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+}
