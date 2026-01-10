@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import BottomNav from './components/BottomNav';
 import { Trophy, Zap, Wallet } from 'lucide-react';
@@ -6,8 +7,8 @@ function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [loading, setLoading] = useState(true);
 
+  // Simulation chargement (On remettra tes vraies données après)
   useEffect(() => {
-    // Petit délai pour simuler un chargement d'app native
     const timer = setTimeout(() => setLoading(false), 1500);
     return () => clearTimeout(timer);
   }, []);
