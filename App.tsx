@@ -34,34 +34,37 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 2. CHARGEMENT DONNÉES (VERSION 3 JOURS)
+  // 2. CHARGEMENT DONNÉES (VERSION 10 JOURS + PROXY CORRIGÉ)
   useEffect(() => {
     const loadData = async () => {
       try {
-        // --- CALCUL DES DATES (Aujourd'hui -> J+3) ---
+        console.log("🔄 Chargement des matchs...");
+        
+        // --- CALCUL DES DATES (J à J+10) ---
         const todayDate = new Date();
         const futureDate = new Date();
-        futureDate.setDate(todayDate.getDate() + 3); // On regarde 3 jours devant
+        futureDate.setDate(todayDate.getDate() + 10); 
         
         const dateFrom = todayDate.toISOString().split('T')[0];
         const dateTo = futureDate.toISOString().split('T')[0];
 
-        // On demande spécifiquement cette période
+        // URL AVEC DATES ET PROXY
         const proxyUrl = "https://corsproxy.io/?";
         const targetUrl = `https://api.football-data.org/v4/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`;
         
+        // Appel API
         const response = await fetch(proxyUrl + encodeURIComponent(targetUrl), {
           headers: { "X-Auth-Token": API_KEYS.FOOTBALL_DATA },
         });
         
         const data = await response.json();
-        // On garde tout ce qui n'est pas annulé
+        
+        // On garde Scheduled, Timed, In_Play, Paused, Finished
         const validMatches = data.matches?.filter(m => m.status !== "CANCELLED") || [];
         setMatches(validMatches);
         setLoading(false);
 
-        // --- (Le reste du code ne change pas) ---
-        // Gestion Stats & Paris
+        // --- Gestion Stats & Paris ---
         const savedStats = JSON.parse(localStorage.getItem('vip_stats') || '{"wins":0, "losses":0}');
         const activeBets = JSON.parse(localStorage.getItem('vip_active_bets') || '[]');
         setActiveBetsList(activeBets); 
@@ -110,75 +113,12 @@ function App() {
         } else {
             setStats({...savedStats, pending: 0});
         }
-      } catch (err) { console.error(err); setLoading(false); }
+      } catch (err) { console.error("Erreur chargement:", err); setLoading(false); }
     };
 
     loadData();
 
     const interval = setInterval(() => {
-        console.log("🔄 Actualisation des scores...");
-        loadData();
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, []);
-        // Gestion Stats & Paris
-        const savedStats = JSON.parse(localStorage.getItem('vip_stats') || '{"wins":0, "losses":0}');
-        const activeBets = JSON.parse(localStorage.getItem('vip_active_bets') || '[]');
-        setActiveBetsList(activeBets); 
-        
-        let newWins = 0;
-        let newLosses = 0;
-        let remainingBets = [];
-
-        if (activeBets.length > 0) {
-            for (let bet of activeBets) {
-                try {
-                    let matchData = validMatches.find(m => m.id === bet.matchId);
-                    
-                    // Si pas trouvé dans la liste globale, on fetch le détail (aussi via Proxy)
-                    if (!matchData) {
-                        const detailUrl = `https://api.football-data.org/v4/matches/${bet.matchId}`;
-                        const matchRes = await fetch(proxyUrl + encodeURIComponent(detailUrl), {
-                             headers: { "X-Auth-Token": API_KEYS.FOOTBALL_DATA },
-                        });
-                        matchData = await matchRes.json();
-                    }
-
-                    if (matchData && matchData.status === "FINISHED") {
-                        const scoreHome = matchData.score.fullTime.home;
-                        const scoreAway = matchData.score.fullTime.away;
-                        let won = false;
-                        if (bet.type === "HOME_WIN" && scoreHome > scoreAway) won = true;
-                        else if (bet.type === "AWAY_WIN" && scoreAway > scoreHome) won = true;
-                        else if (bet.type === "DRAW" && scoreHome === scoreAway) won = true;
-                        
-                        if (won) newWins++; else newLosses++;
-                    } else {
-                        remainingBets.push(bet);
-                    }
-                } catch (e) { remainingBets.push(bet); }
-            }
-
-            if (newWins > 0 || newLosses > 0) {
-                const updatedStats = { wins: savedStats.wins + newWins, losses: savedStats.losses + newLosses };
-                setStats({...updatedStats, pending: remainingBets.length});
-                localStorage.setItem('vip_stats', JSON.stringify(updatedStats));
-                localStorage.setItem('vip_active_bets', JSON.stringify(remainingBets));
-                setActiveBetsList(remainingBets);
-            } else {
-                setStats({...savedStats, pending: activeBets.length});
-            }
-        } else {
-            setStats({...savedStats, pending: 0});
-        }
-      } catch (err) { console.error(err); setLoading(false); }
-    };
-
-    loadData();
-
-    const interval = setInterval(() => {
-        console.log("🔄 Actualisation des scores...");
         loadData();
     }, 60000);
 
@@ -186,14 +126,17 @@ function App() {
   }, []);
 
 
-  // 3. GÉNÉRATEUR
+  // 3. GÉNÉRATEUR IA
   const generateTicket = async () => {
     setLoadingTicket(true);
     setTicketResult("⚡ Analyse tactique en cours...");
     setTicketSaved(false); 
     try {
         const upcomingMatches = matches.filter(m => m.status === "SCHEDULED" || m.status === "TIMED");
-        if (upcomingMatches.length === 0) throw new Error("Aucun match à venir.");
+        
+        if (upcomingMatches.length === 0) {
+            throw new Error("Aucun match 'À venir' trouvé dans la liste.");
+        }
 
         const matchesList = upcomingMatches.slice(0, 15).map(m => `ID:${m.id} | ${m.homeTeam.name} vs ${m.awayTeam.name}`).join("\n");
         const prompt = `Matchs: ${matchesList}. Génère 3 tickets (SAFE, MEDIUM, FUN). JSON Strict. {"display_text": "...", "bets": [{"matchId": 123, "type": "HOME_WIN"}]}`;
@@ -219,7 +162,7 @@ function App() {
             setStats(prev => ({...prev, pending: newBets.length}));
             setTicketSaved(true);
         }
-    } catch (err) { setTicketResult("❌ Erreur: " + err.message); } finally { setLoadingTicket(false); }
+    } catch (err) { setTicketResult("❌ " + err.message); } finally { setLoadingTicket(false); }
   };
 
   // 4. ANALYSE EXPERT
@@ -282,6 +225,7 @@ function App() {
   };
 
   const formatTime = (d) => new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const formatDate = (d) => new Date(d).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' }); // Affiche "Sam 11"
   const winRate = (stats.wins + stats.losses) > 0 ? ((stats.wins / (stats.wins + stats.losses)) * 100).toFixed(0) : 0;
 
   return (
@@ -338,7 +282,7 @@ function App() {
           </div>
 
           <div style={{color:"#888", marginBottom:"15px", fontWeight:"bold", textTransform:"uppercase", letterSpacing:"1px", fontSize:"0.8rem", textAlign: isMobile ? "center" : "left"}}>
-             📅 Matchs & Pronostics ({matches.length})
+             📅 Matchs à venir (J+10) ({matches.length})
           </div>
 
           {!loading && matches.map((match) => (
@@ -346,7 +290,8 @@ function App() {
               <div style={styles.card}>
                 <div style={{fontSize: "0.75rem", color: "#aaa", textTransform:"uppercase", gridColumn: isMobile ? "1 / span 2" : "auto"}}>
                   <span style={{color:"#fff", fontWeight:"bold"}}>{match.competition.name}</span>
-                  <br/>{match.status === "IN_PLAY" || match.status === "PAUSED" ? <span style={{color:"#ff4b4b", fontWeight:"900"}}>LIVE {match.minute}'</span> : formatTime(match.utcDate)}
+                  <br/>
+                  <span style={{color:"#00E0FF"}}>{formatDate(match.utcDate)}</span> - {match.status === "IN_PLAY" || match.status === "PAUSED" ? <span style={{color:"#ff4b4b", fontWeight:"900"}}>LIVE {match.minute}'</span> : formatTime(match.utcDate)}
                 </div>
                 <div style={{...styles.matchContent, gridColumn: isMobile ? "1 / span 2" : "auto"}}>
                   <div style={{...styles.team, justifyContent: "flex-end", textAlign:"right"}}>
@@ -355,7 +300,7 @@ function App() {
                     <img src={match.homeTeam.crest} alt="" style={styles.teamLogo} />
                   </div>
                   <div style={styles.scores}>
-                    {match.status === "SCHEDULED" ? <span style={{color:"#666", fontSize:"1rem"}}>-</span> : `${match.score.fullTime.home ?? 0} - ${match.score.fullTime.away ?? 0}`}
+                    {match.status === "SCHEDULED" || match.status === "TIMED" ? <span style={{color:"#666", fontSize:"1rem"}}>-</span> : `${match.score.fullTime.home ?? 0} - ${match.score.fullTime.away ?? 0}`}
                   </div>
                   <div style={{...styles.team, justifyContent: "flex-start"}}>
                     <img src={match.awayTeam.crest} alt="" style={styles.teamLogo} />
