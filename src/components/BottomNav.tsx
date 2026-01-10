@@ -2,7 +2,12 @@ import React from 'react';
 import { Home, Ticket, Trophy, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-// On définit les onglets du menu
+// --- ICI : On définit l'interface pour calmer TypeScript ---
+interface BottomNavProps {
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+}
+
 const tabs = [
   { id: 'home', icon: Home, label: 'Accueil' },
   { id: 'vip', icon: Ticket, label: 'Pronos VIP' },
@@ -10,7 +15,8 @@ const tabs = [
   { id: 'profile', icon: User, label: 'Profil' },
 ];
 
-export default function BottomNav({ activeTab, setActiveTab }) {
+// On ajoute ": BottomNavProps" pour valider le code
+export default function BottomNav({ activeTab, setActiveTab }: BottomNavProps) {
   return (
     <div className="glass-panel" style={{
       position: 'fixed',

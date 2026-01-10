@@ -1,44 +1,45 @@
 import React, { useState, useEffect } from 'react';
-import BottomNav from './components/BottomNav'; // Ton nouveau menu
-import { Trophy, Zap, Wallet } from 'lucide-react'; // Icônes
-
-// --- CONFIGURATION CLÉS (On garde ta connexion) ---
-const API_KEYS = {
-  FOOTBALL_DATA: import.meta.env.VITE_FOOTBALL_DATA_KEY || "", 
-  GROQ: import.meta.env.VITE_GROQ_KEY || "",
-  ODDS_API: import.meta.env.VITE_ODDS_API_KEY || ""
-};
+import BottomNav from './components/BottomNav';
+import { Trophy, Zap, Wallet } from 'lucide-react';
 
 function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [loading, setLoading] = useState(true);
 
-  // Simulation chargement (On remettra tes vraies données après)
   useEffect(() => {
-    setTimeout(() => setLoading(false), 1000);
+    // Petit délai pour simuler un chargement d'app native
+    const timer = setTimeout(() => setLoading(false), 1500);
+    return () => clearTimeout(timer);
   }, []);
+
+  // --- SPLASH SCREEN (Écran de chargement) ---
+  if (loading) {
+    return (
+      <div style={{ 
+        height: '100vh', display: 'flex', flexDirection: 'column',
+        justifyContent: 'center', alignItems: 'center', background: '#0F172A', color: 'white' 
+      }}>
+        <div style={{ fontSize: '2.5rem', fontWeight: '900', letterSpacing: '-2px' }}>
+          PASSION<span style={{ color: '#00D9FF' }}>VIP</span>
+        </div>
+        <div style={{ marginTop: '20px', color: '#00D9FF', fontSize: '0.9rem' }}>Chargement...</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', paddingBottom: '100px' }}>
       
-      {/* 1. HEADER (Sticky en haut) */}
+      {/* 1. HEADER */}
       <header className="glass-panel" style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        padding: '15px 20px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        borderBottomLeftRadius: '16px',
-        borderBottomRightRadius: '16px',
-        borderTop: 'none', borderLeft: 'none', borderRight: 'none'
+        position: 'sticky', top: 0, zIndex: 50, padding: '15px 20px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px', borderTop: 'none', borderLeft:'none', borderRight:'none'
       }}>
         <div style={{ fontSize: '1.5rem', fontWeight: '900', letterSpacing: '-1px', color: '#fff' }}>
           PASSION<span style={{ color: '#00D9FF' }}>VIP</span>
         </div>
         
-        {/* Fausse Bankroll pour le style (pour l'instant) */}
         <div style={{ 
           display: 'flex', alignItems: 'center', gap: '8px', 
           background: 'rgba(0,0,0,0.3)', padding: '6px 12px', borderRadius: '20px',
@@ -107,9 +108,9 @@ function App() {
           </div>
         )}
 
-        {activeTab === 'vip' && <div style={{ textAlign: 'center', marginTop: '50px' }}>💎 Zone VIP (À venir Jour 3)</div>}
-        {activeTab === 'live' && <div style={{ textAlign: 'center', marginTop: '50px' }}>📡 Live Score (À venir Jour 2)</div>}
-        {activeTab === 'profile' && <div style={{ textAlign: 'center', marginTop: '50px' }}>👤 Ton Profil (À venir Jour 4)</div>}
+        {activeTab === 'vip' && <div style={{ textAlign: 'center', marginTop: '50px', color: '#94A3B8' }}>💎 Zone VIP (Bientôt)</div>}
+        {activeTab === 'live' && <div style={{ textAlign: 'center', marginTop: '50px', color: '#94A3B8' }}>📡 Live Score (Bientôt)</div>}
+        {activeTab === 'profile' && <div style={{ textAlign: 'center', marginTop: '50px', color: '#94A3B8' }}>👤 Profil (Bientôt)</div>}
 
       </main>
 
