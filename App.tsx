@@ -34,23 +34,94 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 2. CHARGEMENT DONNÉES (AVEC LE FIX CORS/PROXY)
+  // 2. CHARGEMENT DONNÉES (VERSION 3 JOURS)
   useEffect(() => {
     const loadData = async () => {
       try {
-        // --- LE FIX EST ICI : On ajoute le Proxy devant l'URL ---
+        // --- CALCUL DES DATES (Aujourd'hui -> J+3) ---
+        const todayDate = new Date();
+        const futureDate = new Date();
+        futureDate.setDate(todayDate.getDate() + 3); // On regarde 3 jours devant
+        
+        const dateFrom = todayDate.toISOString().split('T')[0];
+        const dateTo = futureDate.toISOString().split('T')[0];
+
+        // On demande spécifiquement cette période
         const proxyUrl = "https://corsproxy.io/?";
-        const targetUrl = "https://api.football-data.org/v4/matches";
+        const targetUrl = `https://api.football-data.org/v4/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`;
         
         const response = await fetch(proxyUrl + encodeURIComponent(targetUrl), {
           headers: { "X-Auth-Token": API_KEYS.FOOTBALL_DATA },
         });
         
         const data = await response.json();
+        // On garde tout ce qui n'est pas annulé
         const validMatches = data.matches?.filter(m => m.status !== "CANCELLED") || [];
         setMatches(validMatches);
         setLoading(false);
 
+        // --- (Le reste du code ne change pas) ---
+        // Gestion Stats & Paris
+        const savedStats = JSON.parse(localStorage.getItem('vip_stats') || '{"wins":0, "losses":0}');
+        const activeBets = JSON.parse(localStorage.getItem('vip_active_bets') || '[]');
+        setActiveBetsList(activeBets); 
+        
+        let newWins = 0;
+        let newLosses = 0;
+        let remainingBets = [];
+
+        if (activeBets.length > 0) {
+            for (let bet of activeBets) {
+                try {
+                    let matchData = validMatches.find(m => m.id === bet.matchId);
+                    
+                    if (!matchData) {
+                        const detailUrl = `https://api.football-data.org/v4/matches/${bet.matchId}`;
+                        const matchRes = await fetch(proxyUrl + encodeURIComponent(detailUrl), {
+                             headers: { "X-Auth-Token": API_KEYS.FOOTBALL_DATA },
+                        });
+                        matchData = await matchRes.json();
+                    }
+
+                    if (matchData && matchData.status === "FINISHED") {
+                        const scoreHome = matchData.score.fullTime.home;
+                        const scoreAway = matchData.score.fullTime.away;
+                        let won = false;
+                        if (bet.type === "HOME_WIN" && scoreHome > scoreAway) won = true;
+                        else if (bet.type === "AWAY_WIN" && scoreAway > scoreHome) won = true;
+                        else if (bet.type === "DRAW" && scoreHome === scoreAway) won = true;
+                        
+                        if (won) newWins++; else newLosses++;
+                    } else {
+                        remainingBets.push(bet);
+                    }
+                } catch (e) { remainingBets.push(bet); }
+            }
+
+            if (newWins > 0 || newLosses > 0) {
+                const updatedStats = { wins: savedStats.wins + newWins, losses: savedStats.losses + newLosses };
+                setStats({...updatedStats, pending: remainingBets.length});
+                localStorage.setItem('vip_stats', JSON.stringify(updatedStats));
+                localStorage.setItem('vip_active_bets', JSON.stringify(remainingBets));
+                setActiveBetsList(remainingBets);
+            } else {
+                setStats({...savedStats, pending: activeBets.length});
+            }
+        } else {
+            setStats({...savedStats, pending: 0});
+        }
+      } catch (err) { console.error(err); setLoading(false); }
+    };
+
+    loadData();
+
+    const interval = setInterval(() => {
+        console.log("🔄 Actualisation des scores...");
+        loadData();
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
         // Gestion Stats & Paris
         const savedStats = JSON.parse(localStorage.getItem('vip_stats') || '{"wins":0, "losses":0}');
         const activeBets = JSON.parse(localStorage.getItem('vip_active_bets') || '[]');
