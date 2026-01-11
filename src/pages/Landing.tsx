@@ -73,7 +73,14 @@ export default function Landing() {
               <li style={{ display: 'flex', gap: '10px' }}><Check color="#00D9FF" /> Accès aux cotes</li>
               <li style={{ display: 'flex', gap: '10px' }}><Check color="#00D9FF" /> Bankroll basique</li>
             </ul>
-            <button style={{ width: '100%', padding: '15px', borderRadius: '12px', background: 'rgba(255,255,255,0.1)', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>S'inscrire Gratuitement</button>
+            <button 
+              onClick={() => navigate('/signup')} 
+              style={{ width: '100%', padding: '15px', borderRadius: '12px', background: 'rgba(255,255,255,0.1)', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', transition: 'background 0.2s' }}
+              onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+              onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+            >
+              S'inscrire Gratuitement
+            </button>
           </div>
 
           {/* VIP */}
@@ -86,7 +93,14 @@ export default function Landing() {
               <li style={{ display: 'flex', gap: '10px' }}><Check color="#00FF7F" /> Analyse IA illimitée</li>
               <li style={{ display: 'flex', gap: '10px' }}><Check color="#00FF7F" /> Statut VIP sur le profil</li>
             </ul>
-            <button style={{ width: '100%', padding: '15px', borderRadius: '12px', background: '#00D9FF', color: '#000', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>Devenir VIP</button>
+            <button 
+              onClick={() => navigate('/signup')} 
+              style={{ width: '100%', padding: '15px', borderRadius: '12px', background: '#00D9FF', color: '#000', border: 'none', fontWeight: 'bold', cursor: 'pointer', transition: 'transform 0.1s' }}
+              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
+              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              Devenir VIP
+            </button>
           </div>
 
         </div>
