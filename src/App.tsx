@@ -1,32 +1,33 @@
 // @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import BottomNav from './components/BottomNav';
+import FilterBar from './components/FilterBar'; // ✅ On importe le filtre
 import { Trophy, Zap, Wallet, Activity, Brain } from 'lucide-react';
 
-// --- 1. CONFIGURATION (Tes clés API) ---
+// --- CONFIGURATION ---
 const API_KEYS = {
   FOOTBALL_DATA: import.meta.env.VITE_FOOTBALL_DATA_KEY || "", 
   GROQ: import.meta.env.VITE_GROQ_KEY || ""
 };
 
 function App() {
-  // --- 2. ÉTATS (La mémoire de l'app) ---
+  // --- ÉTATS ---
   const [activeTab, setActiveTab] = useState('home');
+  const [selectedLeague, setSelectedLeague] = useState('ALL'); // ✅ État du filtre
   const [loading, setLoading] = useState(true);
   const [matches, setMatches] = useState([]);
   
-  // États pour l'IA
+  // États IA
   const [ticketResult, setTicketResult] = useState(null);
   const [loadingTicket, setLoadingTicket] = useState(false);
   const [analyses, setAnalyses] = useState({});
   const [analyzingId, setAnalyzingId] = useState(null);
 
-  // --- 3. CHARGEMENT DES MATCHS (Le Moteur) ---
+  // --- CHARGEMENT DONNÉES ---
   useEffect(() => {
     const loadData = async () => {
       try {
-        console.log("🔄 Chargement des matchs...");
-        // On regarde les 10 prochains jours pour être sûr d'avoir du foot
+        console.log("🔄 Chargement...");
         const today = new Date();
         const future = new Date();
         future.setDate(today.getDate() + 10);
@@ -42,49 +43,48 @@ function App() {
         });
         
         const data = await res.json();
-        // On garde les matchs non annulés
         const validMatches = data.matches?.filter(m => m.status !== "CANCELLED") || [];
         setMatches(validMatches);
         setLoading(false);
-      } catch (err) {
-        console.error("Erreur API:", err);
-        setLoading(false);
-      }
+      } catch (err) { console.error(err); setLoading(false); }
     };
-
     loadData();
   }, []);
 
-  // --- 4. FONCTION : ANALYSER UN MATCH (IA) ---
+  // --- FILTRAGE DES MATCHS (La logique magique) ---
+  const filteredMatches = selectedLeague === 'ALL' 
+    ? matches 
+    : matches.filter(m => m.competition.code === selectedLeague);
+
+  // --- ANALYSE IA ---
   const handleAnalyze = async (match) => {
-    if (analyses[match.id]) return; // Déjà analysé
+    if (analyses[match.id]) return; 
     setAnalyzingId(match.id);
-    
     try {
       const prompt = `Expert foot. Analyse courte : ${match.homeTeam.name} vs ${match.awayTeam.name}.
-      Donne un prono sécurisé (Double chance ou Over/Under). 
-      Format: "💡 PRONO : ... | 📝 RAISON : ..."`;
+      Donne un prono sécurisé. Format: "💡 PRONO : ... | 📝 RAISON : ..."`;
 
       const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST", headers: { "Authorization": `Bearer ${API_KEYS.GROQ}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages: [{ role: "user", content: prompt }], temperature: 0.7 })
+        body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages: [{ role: "user", content: prompt }] })
       });
       const data = await res.json();
       setAnalyses(prev => ({ ...prev, [match.id]: data.choices[0]?.message?.content }));
     } catch (e) { console.error(e); } finally { setAnalyzingId(null); }
   };
 
-  // --- 5. FONCTION : GÉNÉRER TICKET VIP (IA) ---
+  // --- GÉNÉRATEUR TICKET ---
   const generateTicket = async () => {
     setLoadingTicket(true);
     setTicketResult(null);
     try {
-      // On prend les matchs à venir uniquement
-      const upcoming = matches.filter(m => m.status === "SCHEDULED" || m.status === "TIMED").slice(0, 10);
-      const list = upcoming.map(m => `${m.homeTeam.name} vs ${m.awayTeam.name}`).join(", ");
+      // On utilise filteredMatches pour générer un ticket basé sur le filtre actuel !
+      const sourceMatches = filteredMatches.length > 0 ? filteredMatches : matches;
+      const upcoming = sourceMatches.filter(m => m.status === "SCHEDULED" || m.status === "TIMED").slice(0, 15);
       
+      const list = upcoming.map(m => `${m.homeTeam.name} vs ${m.awayTeam.name}`).join(", ");
       const prompt = `Génère un TICKET COMBINÉ "SAFE" (Cote ~2.5) avec ces matchs : ${list}. 
-      Choisis 3 matchs sûrs. Format JSON strict : {"display_text": "Texte joli avec emojis..."}`;
+      Choisis 3 matchs. Format JSON strict : {"display_text": "..."}`;
 
       const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST", headers: { "Authorization": `Bearer ${API_KEYS.GROQ}`, "Content-Type": "application/json" },
@@ -93,13 +93,11 @@ function App() {
       const data = await res.json();
       const content = JSON.parse(data.choices[0]?.message?.content);
       setTicketResult(content.display_text);
-    } catch (e) { setTicketResult("❌ Erreur IA. Réessaie."); } finally { setLoadingTicket(false); }
+    } catch (e) { setTicketResult("❌ Erreur IA."); } finally { setLoadingTicket(false); }
   };
 
-  // Helpers de formatage
   const formatTime = (d) => new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
-  // --- RENDU VISUEL ---
   return (
     <div style={{ minHeight: '100vh', paddingBottom: '100px' }}>
       
@@ -124,16 +122,15 @@ function App() {
 
       <main style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
         
-        {/* --- ONGLET ACCUEIL (Liste des matchs) --- */}
         {activeTab === 'home' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
-            {/* Stats Rapides */}
+            {/* Stats Dynamiques (changent selon le filtre) */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
               <div className="glass-panel" style={{ padding: '15px', borderRadius: '16px', textAlign: 'center' }}>
                 <Trophy size={24} color="#FFD700" style={{ marginBottom: '5px' }} />
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white' }}>{matches.length}</div>
-                <div style={{ fontSize: '0.8rem', color: '#94A3B8' }}>Matchs détectés</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white' }}>{filteredMatches.length}</div>
+                <div style={{ fontSize: '0.8rem', color: '#94A3B8' }}>Matchs {selectedLeague !== 'ALL' ? selectedLeague : ''}</div>
               </div>
               <div className="glass-panel" style={{ padding: '15px', borderRadius: '16px', textAlign: 'center' }}>
                 <Activity size={24} color="#00D9FF" style={{ marginBottom: '5px' }} />
@@ -142,15 +139,23 @@ function App() {
               </div>
             </div>
 
-            <h3 style={{ marginTop: '10px', marginBottom: '0', color: 'white' }}>🔥 Matchs à venir</h3>
+            {/* --- LA BARRE DE FILTRE EST ICI --- */}
+            <div>
+              <h3 style={{ marginTop: '0', marginBottom: '10px', color: 'white' }}>🏆 Compétitions</h3>
+              <FilterBar selectedLeague={selectedLeague} setSelectedLeague={setSelectedLeague} />
+            </div>
+
+            <h3 style={{ marginTop: '0', marginBottom: '0', color: 'white' }}>🔥 Matchs à venir</h3>
             
             {loading ? (
-              <div style={{textAlign: "center", color: "#94A3B8", marginTop: "20px"}}>Chargement des cotes...</div>
+              <div style={{textAlign: "center", color: "#94A3B8", marginTop: "20px"}}>Chargement...</div>
+            ) : filteredMatches.length === 0 ? (
+               <div style={{textAlign: "center", color: "#94A3B8", marginTop: "20px", padding:"20px", border:"1px dashed #333", borderRadius:"10px"}}>
+                 Aucun match trouvé pour cette ligue dans les 10 prochains jours. 😴
+               </div>
             ) : (
-              matches.slice(0, 20).map((match) => (
+              filteredMatches.slice(0, 50).map((match) => (
                 <div key={match.id} className="glass-panel" style={{ padding: '15px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  
-                  {/* Ligne du match */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
                       <img src={match.homeTeam.crest} style={{ width: '25px', height: '25px', objectFit: 'contain' }} />
@@ -162,8 +167,6 @@ function App() {
                       <img src={match.awayTeam.crest} style={{ width: '25px', height: '25px', objectFit: 'contain' }} />
                     </div>
                   </div>
-
-                  {/* Info Heure & Analyse */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px', marginTop: '5px' }}>
                     <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
                       {formatTime(match.utcDate)} • {match.competition.name}
@@ -180,8 +183,6 @@ function App() {
                       {analyzingId === match.id ? "..." : (analyses[match.id] ? "Voir Prono" : "Analyser IA")}
                     </button>
                   </div>
-
-                  {/* Résultat Analyse */}
                   {analyses[match.id] && (
                     <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '8px', fontSize: '0.85rem', color: '#e2e8f0', marginTop: '5px' }}>
                       {analyses[match.id]}
@@ -193,7 +194,6 @@ function App() {
           </div>
         )}
 
-        {/* --- ONGLET VIP (Générateur) --- */}
         {activeTab === 'vip' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', textAlign: 'center' }}>
             <div style={{
@@ -202,9 +202,9 @@ function App() {
               boxShadow: '0 10px 30px rgba(0, 217, 255, 0.3)'
             }}>
               <Brain size={48} color="white" style={{ marginBottom: '15px' }} />
-              <h2 style={{ margin: '0 0 10px 0' }}>Générateur de Combinés</h2>
+              <h2 style={{ margin: '0 0 10px 0' }}>Générateur {selectedLeague !== 'ALL' ? selectedLeague : 'Global'}</h2>
               <p style={{ opacity: 0.9, fontSize: '0.9rem', marginBottom: '20px' }}>
-                Laissez l'IA scanner les 50 prochains matchs pour créer le ticket parfait.
+                L'IA va scanner les matchs {selectedLeague !== 'ALL' ? 'de cette ligue' : 'du monde entier'} pour créer ton ticket.
               </p>
               <button 
                 onClick={generateTicket}
@@ -218,7 +218,6 @@ function App() {
                 {loadingTicket ? "Analyse en cours..." : "GÉNÉRER MON TICKET 🚀"}
               </button>
             </div>
-
             {ticketResult && (
               <div className="glass-panel" style={{ padding: '20px', borderRadius: '16px', textAlign: 'left', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
                 {ticketResult}
@@ -227,15 +226,12 @@ function App() {
           </div>
         )}
 
-        {/* --- AUTRES ONGLETS --- */}
         {activeTab === 'live' && <div style={{ textAlign: 'center', marginTop: '50px', color: '#94A3B8' }}>📡 Live Score (Bientôt)</div>}
         {activeTab === 'profile' && <div style={{ textAlign: 'center', marginTop: '50px', color: '#94A3B8' }}>👤 Profil (Bientôt)</div>}
 
       </main>
 
-      {/* NAVIGATION */}
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
-    
     </div>
   );
 }
