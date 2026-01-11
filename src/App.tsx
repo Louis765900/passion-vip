@@ -1,8 +1,9 @@
 // @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import BottomNav from './components/BottomNav';
-import FilterBar from './components/FilterBar'; // ✅ On importe le filtre
-import { Trophy, Zap, Wallet, Activity, Brain } from 'lucide-react';
+import FilterBar from './components/FilterBar';
+import DateFilter from './components/DateFilter'; // ✅ Import des dates
+import { Trophy, Zap, Wallet, Activity, Brain, CheckCircle, Ticket } from 'lucide-react';
 
 // --- CONFIGURATION ---
 const API_KEYS = {
@@ -13,17 +14,19 @@ const API_KEYS = {
 function App() {
   // --- ÉTATS ---
   const [activeTab, setActiveTab] = useState('home');
-  const [selectedLeague, setSelectedLeague] = useState('ALL'); // ✅ État du filtre
+  const [selectedLeague, setSelectedLeague] = useState('ALL');
+  const [selectedDate, setSelectedDate] = useState('ALL'); // ✅ Filtre Date
   const [loading, setLoading] = useState(true);
   const [matches, setMatches] = useState([]);
   
-  // États IA
+  // États IA & UI
   const [ticketResult, setTicketResult] = useState(null);
   const [loadingTicket, setLoadingTicket] = useState(false);
   const [analyses, setAnalyses] = useState({});
   const [analyzingId, setAnalyzingId] = useState(null);
+  const [expandedMatches, setExpandedMatches] = useState({}); // Pour ouvrir/fermer les pronos
 
-  // --- CHARGEMENT DONNÉES ---
+  // --- CHARGEMENT ---
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -51,40 +54,62 @@ function App() {
     loadData();
   }, []);
 
-  // --- FILTRAGE DES MATCHS (La logique magique) ---
-  const filteredMatches = selectedLeague === 'ALL' 
-    ? matches 
-    : matches.filter(m => m.competition.code === selectedLeague);
+  // --- FILTRAGE INTELLIGENT ---
+  const filteredMatches = matches.filter(m => {
+    const matchLeague = selectedLeague === 'ALL' || m.competition.code === selectedLeague;
+    const matchDateStr = m.utcDate.split('T')[0];
+    const matchDate = selectedDate === 'ALL' || matchDateStr === selectedDate;
+    return matchLeague && matchDate;
+  });
 
-  // --- ANALYSE IA ---
+  // --- IA : ANALYSE MATCH ---
   const handleAnalyze = async (match) => {
-    if (analyses[match.id]) return; 
+    // Si déjà analysé, on toggle juste l'affichage (Ouvrir/Fermer)
+    if (analyses[match.id]) {
+      setExpandedMatches(prev => ({...prev, [match.id]: !prev[match.id]}));
+      return;
+    }
+
     setAnalyzingId(match.id);
     try {
-      const prompt = `Expert foot. Analyse courte : ${match.homeTeam.name} vs ${match.awayTeam.name}.
-      Donne un prono sécurisé. Format: "💡 PRONO : ... | 📝 RAISON : ..."`;
+      const prompt = `Expert paris sportifs. Analyse le match ${match.homeTeam.name} vs ${match.awayTeam.name}.
+      Réponds UNIQUEMENT avec ce format court :
+      "🎯 PRONO : [Ton prono]
+      📊 COTE ESTIMÉE : [Cote]
+      📝 AVIS : [Une phrase d'analyse simple]"`;
 
       const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST", headers: { "Authorization": `Bearer ${API_KEYS.GROQ}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages: [{ role: "user", content: prompt }] })
       });
       const data = await res.json();
-      setAnalyses(prev => ({ ...prev, [match.id]: data.choices[0]?.message?.content }));
+      const text = data.choices[0]?.message?.content;
+      
+      setAnalyses(prev => ({ ...prev, [match.id]: text }));
+      setExpandedMatches(prev => ({...prev, [match.id]: true})); // On ouvre le résultat
     } catch (e) { console.error(e); } finally { setAnalyzingId(null); }
   };
 
-  // --- GÉNÉRATEUR TICKET ---
+  // --- IA : GÉNÉRATEUR TICKET VIP ---
   const generateTicket = async () => {
     setLoadingTicket(true);
     setTicketResult(null);
     try {
-      // On utilise filteredMatches pour générer un ticket basé sur le filtre actuel !
       const sourceMatches = filteredMatches.length > 0 ? filteredMatches : matches;
-      const upcoming = sourceMatches.filter(m => m.status === "SCHEDULED" || m.status === "TIMED").slice(0, 15);
-      
+      const upcoming = sourceMatches.filter(m => m.status === "SCHEDULED" || m.status === "TIMED").slice(0, 20);
       const list = upcoming.map(m => `${m.homeTeam.name} vs ${m.awayTeam.name}`).join(", ");
-      const prompt = `Génère un TICKET COMBINÉ "SAFE" (Cote ~2.5) avec ces matchs : ${list}. 
-      Choisis 3 matchs. Format JSON strict : {"display_text": "..."}`;
+      
+      // On demande un format HTML brut pour le style
+      const prompt = `Génère un TICKET COMBINÉ "SAFE" (Cote totale ~3.00) avec 3 matchs parmi : ${list}.
+      Réponds UNIQUEMENT avec un objet JSON contenant : 
+      {
+        "matches": [
+           {"match": "Equipe A vs Equipe B", "selection": "Victoire A", "odds": "1.50"},
+           {"match": "...", "selection": "...", "odds": "..."}
+        ],
+        "total_odds": "3.10",
+        "advice": "Ticket basé sur la forme du moment."
+      }`;
 
       const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST", headers: { "Authorization": `Bearer ${API_KEYS.GROQ}`, "Content-Type": "application/json" },
@@ -92,8 +117,8 @@ function App() {
       });
       const data = await res.json();
       const content = JSON.parse(data.choices[0]?.message?.content);
-      setTicketResult(content.display_text);
-    } catch (e) { setTicketResult("❌ Erreur IA."); } finally { setLoadingTicket(false); }
+      setTicketResult(content);
+    } catch (e) { setTicketResult(null); } finally { setLoadingTicket(false); }
   };
 
   const formatTime = (d) => new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -110,11 +135,7 @@ function App() {
         <div style={{ fontSize: '1.5rem', fontWeight: '900', letterSpacing: '-1px', color: '#fff' }}>
           PASSION<span style={{ color: '#00D9FF' }}>VIP</span>
         </div>
-        <div style={{ 
-          display: 'flex', alignItems: 'center', gap: '8px', 
-          background: 'rgba(0,0,0,0.3)', padding: '6px 12px', borderRadius: '20px',
-          border: '1px solid rgba(255,255,255,0.1)' 
-        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.3)', padding: '6px 12px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)' }}>
           <Wallet size={16} color="#00FF7F" />
           <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#00FF7F' }}>1,250 €</span>
         </div>
@@ -123,39 +144,30 @@ function App() {
       <main style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
         
         {activeTab === 'home' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
             
-            {/* Stats Dynamiques (changent selon le filtre) */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-              <div className="glass-panel" style={{ padding: '15px', borderRadius: '16px', textAlign: 'center' }}>
-                <Trophy size={24} color="#FFD700" style={{ marginBottom: '5px' }} />
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white' }}>{filteredMatches.length}</div>
-                <div style={{ fontSize: '0.8rem', color: '#94A3B8' }}>Matchs {selectedLeague !== 'ALL' ? selectedLeague : ''}</div>
-              </div>
-              <div className="glass-panel" style={{ padding: '15px', borderRadius: '16px', textAlign: 'center' }}>
-                <Activity size={24} color="#00D9FF" style={{ marginBottom: '5px' }} />
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white' }}>82%</div>
-                <div style={{ fontSize: '0.8rem', color: '#94A3B8' }}>Confiance IA</div>
-              </div>
-            </div>
+            {/* Filtres */}
+            <h3 style={{ marginTop: '0', marginBottom: '10px', color: 'white' }}>🏆 Compétitions</h3>
+            <FilterBar selectedLeague={selectedLeague} setSelectedLeague={setSelectedLeague} />
+            
+            {/* ✅ LES DATES SONT ICI */}
+            <DateFilter selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
 
-            {/* --- LA BARRE DE FILTRE EST ICI --- */}
-            <div>
-              <h3 style={{ marginTop: '0', marginBottom: '10px', color: 'white' }}>🏆 Compétitions</h3>
-              <FilterBar selectedLeague={selectedLeague} setSelectedLeague={setSelectedLeague} />
-            </div>
-
-            <h3 style={{ marginTop: '0', marginBottom: '0', color: 'white' }}>🔥 Matchs à venir</h3>
+            <h3 style={{ marginTop: '10px', marginBottom: '10px', color: 'white' }}>
+              🔥 Matchs {selectedDate === 'ALL' ? '' : 'sélectionnés'}
+            </h3>
             
             {loading ? (
               <div style={{textAlign: "center", color: "#94A3B8", marginTop: "20px"}}>Chargement...</div>
             ) : filteredMatches.length === 0 ? (
                <div style={{textAlign: "center", color: "#94A3B8", marginTop: "20px", padding:"20px", border:"1px dashed #333", borderRadius:"10px"}}>
-                 Aucun match trouvé pour cette ligue dans les 10 prochains jours. 😴
+                 Aucun match trouvé. 😴
                </div>
             ) : (
               filteredMatches.slice(0, 50).map((match) => (
-                <div key={match.id} className="glass-panel" style={{ padding: '15px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div key={match.id} className="glass-panel" style={{ padding: '15px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom:'10px' }}>
+                  
+                  {/* Match Info */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
                       <img src={match.homeTeam.crest} style={{ width: '25px', height: '25px', objectFit: 'contain' }} />
@@ -167,24 +179,32 @@ function App() {
                       <img src={match.awayTeam.crest} style={{ width: '25px', height: '25px', objectFit: 'contain' }} />
                     </div>
                   </div>
+
+                  {/* Bouton Action */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px', marginTop: '5px' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
-                      {formatTime(match.utcDate)} • {match.competition.name}
-                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>{formatTime(match.utcDate)} • {match.competition.name}</div>
                     <button 
                       onClick={() => handleAnalyze(match)}
                       disabled={analyzingId === match.id}
                       style={{ 
-                        background: analyses[match.id] ? 'rgba(0, 255, 127, 0.1)' : 'rgba(0, 217, 255, 0.1)', 
-                        color: analyses[match.id] ? '#00FF7F' : '#00D9FF', 
-                        border: 'none', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.8rem', cursor: 'pointer' 
+                        background: analyses[match.id] ? (expandedMatches[match.id] ? '#00D9FF' : 'rgba(0, 217, 255, 0.1)') : 'rgba(0, 217, 255, 0.1)', 
+                        color: analyses[match.id] ? (expandedMatches[match.id] ? '#000' : '#00D9FF') : '#00D9FF', 
+                        border: 'none', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.8rem', cursor: 'pointer',
+                        transition: 'all 0.2s'
                       }}
                     >
-                      {analyzingId === match.id ? "..." : (analyses[match.id] ? "Voir Prono" : "Analyser IA")}
+                      {analyzingId === match.id ? "Analys..." : (analyses[match.id] ? (expandedMatches[match.id] ? "Masquer 🔼" : "Voir Prono 🔽") : "Analyser IA")}
                     </button>
                   </div>
-                  {analyses[match.id] && (
-                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '8px', fontSize: '0.85rem', color: '#e2e8f0', marginTop: '5px' }}>
+
+                  {/* ✅ Affichage du Prono (Formaté propre) */}
+                  {analyses[match.id] && expandedMatches[match.id] && (
+                    <div style={{ 
+                      background: 'rgba(15, 23, 42, 0.6)', 
+                      padding: '15px', borderRadius: '12px', marginTop: '5px',
+                      borderLeft: '3px solid #00FF7F',
+                      whiteSpace: 'pre-wrap', color: '#E2E8F0', fontSize: '0.9rem', lineHeight: '1.5'
+                    }}>
                       {analyses[match.id]}
                     </div>
                   )}
@@ -203,9 +223,6 @@ function App() {
             }}>
               <Brain size={48} color="white" style={{ marginBottom: '15px' }} />
               <h2 style={{ margin: '0 0 10px 0' }}>Générateur {selectedLeague !== 'ALL' ? selectedLeague : 'Global'}</h2>
-              <p style={{ opacity: 0.9, fontSize: '0.9rem', marginBottom: '20px' }}>
-                L'IA va scanner les matchs {selectedLeague !== 'ALL' ? 'de cette ligue' : 'du monde entier'} pour créer ton ticket.
-              </p>
               <button 
                 onClick={generateTicket}
                 disabled={loadingTicket}
@@ -215,12 +232,58 @@ function App() {
                   fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
                 }}
               >
-                {loadingTicket ? "Analyse en cours..." : "GÉNÉRER MON TICKET 🚀"}
+                {loadingTicket ? "L'IA réfléchit..." : "GÉNÉRER TICKET 🚀"}
               </button>
             </div>
-            {ticketResult && (
-              <div className="glass-panel" style={{ padding: '20px', borderRadius: '16px', textAlign: 'left', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
-                {ticketResult}
+
+            {/* ✅ NOUVEAU DESIGN TICKET VIP (Style Reçu) */}
+            {ticketResult && ticketResult.matches && (
+              <div style={{ 
+                background: 'white', color: '#1e293b', 
+                borderRadius: '6px', padding: '20px', 
+                position: 'relative', 
+                boxShadow: '0 0 20px rgba(0,255,127,0.2)',
+                fontFamily: 'monospace' 
+              }}>
+                {/* Bordure du haut style ticket déchiré */}
+                <div style={{ borderBottom: '2px dashed #cbd5e1', paddingBottom: '15px', marginBottom: '15px' }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'10px', fontSize:'1.2rem', fontWeight:'900', color:'#0f172a' }}>
+                    <Ticket size={24} /> TICKET GAGNANT
+                  </div>
+                  <div style={{ fontSize:'0.8rem', color:'#64748b', marginTop:'5px' }}>{new Date().toLocaleString()}</div>
+                </div>
+
+                {/* Liste des matchs */}
+                <div style={{ display:'flex', flexDirection:'column', gap:'15px', textAlign:'left' }}>
+                  {ticketResult.matches.map((m, idx) => (
+                    <div key={idx} style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontWeight:'bold', fontSize:'0.9rem' }}>{m.match}</div>
+                        <div style={{ fontSize:'0.85rem', color:'#0066FF' }}>👉 {m.selection}</div>
+                      </div>
+                      <div style={{ fontWeight:'bold', fontSize:'1rem', background:'#e2e8f0', padding:'4px 8px', borderRadius:'4px' }}>
+                        {m.odds}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Total */}
+                <div style={{ borderTop: '2px dashed #cbd5e1', paddingTop: '15px', marginTop: '20px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <span style={{ fontWeight:'bold', fontSize:'1.1rem' }}>COTE TOTALE</span>
+                  <span style={{ fontWeight:'900', fontSize:'1.5rem', color:'#00D9FF', background:'#0f172a', padding:'5px 10px', borderRadius:'5px' }}>
+                    {ticketResult.total_odds}
+                  </span>
+                </div>
+                
+                <div style={{ marginTop:'15px', fontSize:'0.8rem', color:'#64748b', fontStyle:'italic' }}>
+                  "{ticketResult.advice}"
+                </div>
+                
+                {/* Bouton Parier */}
+                <button style={{ width:'100%', background:'#00D9FF', color:'#fff', border:'none', padding:'12px', marginTop:'20px', borderRadius:'4px', fontWeight:'bold', cursor:'pointer' }}>
+                  PLACER CE PARI 💸
+                </button>
               </div>
             )}
           </div>
