@@ -1,60 +1,80 @@
 // @ts-nocheck
 import React from 'react';
 import { motion } from 'framer-motion';
+import { Globe } from 'lucide-react';
 
+// Liste des ligues avec les VRAIS logos officiels
 const leagues = [
-  { code: 'ALL', label: '🌍 Tous' },
-  { code: 'FL1', label: '🇫🇷 Ligue 1' },
-  { code: 'PL', label: '🇬🇧 Premier League' },
-  { code: 'PD', label: '🇪🇸 La Liga' },
-  { code: 'SA', label: '🇮🇹 Serie A' },
-  { code: 'BL1', label: '🇩🇪 Bundesliga' },
-  { code: 'CL', label: '🇪🇺 Champions League' },
-  { code: 'EL', label: '🇪🇺 Europa League' },
+  { code: 'ALL', label: 'Tous', image: null, icon: Globe },
+  { code: 'PL', label: 'Premier League', image: 'https://media.api-sports.io/football/leagues/39.png' },
+  { code: 'PD', label: 'La Liga', image: 'https://media.api-sports.io/football/leagues/140.png' },
+  { code: 'SA', label: 'Serie A', image: 'https://media.api-sports.io/football/leagues/135.png' },
+  { code: 'BL1', label: 'Bundesliga', image: 'https://media.api-sports.io/football/leagues/78.png' },
+  { code: 'FL1', label: 'Ligue 1', image: 'https://media.api-sports.io/football/leagues/61.png' },
+  { code: 'CL', label: 'Champions League', image: 'https://media.api-sports.io/football/leagues/2.png' },
+  { code: 'EL', label: 'Europa League', image: 'https://media.api-sports.io/football/leagues/3.png' },
 ];
 
 export default function FilterBar({ selectedLeague, setSelectedLeague }) {
   return (
     <div style={{
       display: 'flex',
-      gap: '10px',
+      gap: '12px', // Un peu plus d'espace entre les boutons
       overflowX: 'auto',
-      paddingBottom: '5px',
-      marginBottom: '15px',
-      scrollbarWidth: 'none', // Cache scrollbar Firefox
-      msOverflowStyle: 'none', // Cache scrollbar IE
-      cursor: 'grab'
+      paddingBottom: '10px', // Espace pour l'ombre
+      marginBottom: '10px',
+      scrollbarWidth: 'none',
+      msOverflowStyle: 'none',
+      cursor: 'grab',
+      paddingLeft: '5px' // Petit padding au début
     }}>
-      {/* Hack CSS pour cacher la scrollbar sur Chrome/Safari */}
-      <style>{`
-        div::-webkit-scrollbar { display: none; }
-      `}</style>
+      <style>{`div::-webkit-scrollbar { display: none; }`}</style>
 
-      {leagues.map((league) => (
+      {leagues.map((league) => {
+        const Icon = league.icon;
+        const isSelected = selectedLeague === league.code;
+        
+        return (
         <motion.button
           key={league.code}
           whileTap={{ scale: 0.95 }}
           onClick={() => setSelectedLeague(league.code)}
           style={{
-            background: selectedLeague === league.code 
+            // Fond dégradé si actif, sinon verre fumé sombre
+            background: isSelected 
               ? 'linear-gradient(135deg, #00D9FF 0%, #0066FF 100%)' 
-              : 'rgba(30, 41, 59, 0.70)',
-            color: selectedLeague === league.code ? 'white' : '#94A3B8',
-            border: selectedLeague === league.code ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
-            padding: '8px 16px',
-            borderRadius: '20px',
+              : 'rgba(15, 23, 42, 0.6)', 
+            color: 'white',
+            // Bordure lumineuse si actif
+            border: isSelected ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+            padding: '10px 16px',
+            borderRadius: '16px', // Coins plus arrondis
             whiteSpace: 'nowrap',
-            fontSize: '0.85rem',
-            fontWeight: 'bold',
+            fontSize: '0.9rem',
+            fontWeight: '600',
             cursor: 'pointer',
-            boxShadow: selectedLeague === league.code ? '0 4px 15px rgba(0, 217, 255, 0.3)' : 'none',
-            flexShrink: 0, // Empêche les boutons de s'écraser
-            backdropFilter: 'blur(10px)'
+            // Ombre portée néon si actif
+            boxShadow: isSelected ? '0 4px 20px rgba(0, 217, 255, 0.4)' : 'none',
+            flexShrink: 0,
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px', // Espace entre logo et texte
+            transition: 'all 0.2s ease'
           }}
         >
-          {league.label}
+          {/* Affichage du logo officiel ou de l'icône Globe pour "Tous" */}
+          {league.image ? (
+            <img src={league.image} alt={league.label} style={{ width: '24px', height: '24px', objectFit: 'contain', filter: isSelected ? 'none' : 'grayscale(100%) brightness(1.5)' }} />
+          ) : (
+            <Icon size={20} color={isSelected ? 'white' : '#94A3B8'} />
+          )}
+          
+          <span style={{ color: isSelected ? 'white' : (league.image ? 'white' : '#94A3B8') }}>
+            {league.label}
+          </span>
         </motion.button>
-      ))}
+      )})}
     </div>
   );
 }
