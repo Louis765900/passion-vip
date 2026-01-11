@@ -83,7 +83,7 @@ export default function Landing() {
             </button>
           </div>
 
-          {/* VIP */}
+          {/* VIP - AVEC TON LIEN STRIPE */}
           <div style={{ width: '300px', padding: '40px', borderRadius: '24px', border: '1px solid #00D9FF', background: 'rgba(0, 217, 255, 0.05)', textAlign: 'left', position: 'relative' }}>
             <div style={{ position: 'absolute', top: '-12px', left: '50%', transform: 'translateX(-50%)', background: '#00D9FF', color: '#000', padding: '5px 15px', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.8rem' }}>POPULAIRE</div>
             <div style={{ color: '#00D9FF', fontWeight: 'bold', marginBottom: '10px' }}>CONFIRMÉ</div>
@@ -94,7 +94,7 @@ export default function Landing() {
               <li style={{ display: 'flex', gap: '10px' }}><Check color="#00FF7F" /> Statut VIP sur le profil</li>
             </ul>
             <button 
-              onClick={() => navigate('/signup')} 
+              onClick={() => window.location.href = 'https://buy.stripe.com/test_8x2aER5tv71EfM208NgIo00'} 
               style={{ width: '100%', padding: '15px', borderRadius: '12px', background: '#00D9FF', color: '#000', border: 'none', fontWeight: 'bold', cursor: 'pointer', transition: 'transform 0.1s' }}
               onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
               onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
