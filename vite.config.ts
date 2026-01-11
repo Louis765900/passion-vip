@@ -1,26 +1,35 @@
-import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
-export default defineConfig(({ mode }) => {
-    const env = loadEnv(mode, '.', '');
-    return {
-      server: {
-        port: 3000,
-        host: '0.0.0.0',
-      },
-      plugins: [react()],
-      define: {
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GROQ_API_KEY': JSON.stringify(env.GROQ_API_KEY),
-        'process.env.ODDS_API_KEY': JSON.stringify(env.ODDS_API_KEY),
-        'process.env.FOOTBALL_DATA_KEY': JSON.stringify(env.FOOTBALL_DATA_KEY),
-        'process.env.CLOUBET_API_KEY': JSON.stringify(env.CLOUBET_API_KEY)
-      },
-      resolve: {
-        alias: {
-          '@': path.resolve(__dirname, '.'),
-        }
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      manifest: {
+        name: 'Passion VIP',
+        short_name: 'PassionVIP',
+        description: 'L\'application de pronostics sportifs par IA',
+        theme_color: '#0F172A',
+        background_color: '#0F172A',
+        display: 'standalone', // C'est ça qui enlève la barre d'URL !
+        orientation: 'portrait',
+        icons: [
+          {
+            src: 'logo.png', // On va ajouter cette image juste après
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: 'logo.png',
+            sizes: '512x512',
+            type: 'image/png'
+          }
+        ]
       }
-    };
-});
+    })
+  ],
+})
