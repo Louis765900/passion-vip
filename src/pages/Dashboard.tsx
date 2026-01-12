@@ -56,9 +56,9 @@ export default function Dashboard() {
             setMatches(data.matches);
             setLiveMatches(data.matches.filter(m => ['IN_PLAY', 'PAUSED', 'HALFTIME'].includes(m.status)));
         }
-        setLoading(false);
       } catch (e) {
         console.error("Erreur API:", e);
+      } finally {
         setLoading(false);
       }
     };
@@ -95,38 +95,52 @@ export default function Dashboard() {
   );
 
   // 2. ACCUEIL / PRONOS GRATUITS (Lecture Seule)
-  const renderHome = () => (
-    <div style={{padding: '20px'}}>
-        <h2 style={{color:'white', marginBottom:'20px'}}>Analyses du Jour</h2>
-        {matches.filter(m => m.status === 'TIMED').length > 0 ? matches.filter(m => m.status === 'TIMED').map(m => (
-            <div key={m.id} style={{
-                background: 'white', borderRadius: '12px', padding: '15px', marginBottom: '15px',
-                borderLeft: '4px solid #3B82F6', color: '#1E293B'
-            }}>
-                <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.8rem', color:'#64748B', marginBottom:'10px'}}>
-                    <span>{m.competition.name}</span>
-                    <span>{new Date(m.utcDate).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                </div>
-                
-                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', fontWeight:'bold', fontSize:'1rem', marginBottom:'15px'}}>
-                    <span>{m.homeTeam.shortName}</span>
-                    <span style={{color:'#94A3B8', fontSize:'0.8rem'}}>vs</span>
-                    <span>{m.awayTeam.shortName}</span>
-                </div>
+  const renderHome = () => {
+    // On filtre les matchs à venir ou programmés
+    const upcomingMatches = matches.filter(m => m.status === 'TIMED' || m.status === 'SCHEDULED');
 
-                {/* Section Analyse "Teaser" */}
-                <div style={{background:'#F1F5F9', padding:'10px', borderRadius:'8px', fontSize:'0.85rem'}}>
-                    <div style={{display:'flex', alignItems:'center', gap:'5px', color:'#3B82F6', fontWeight:'bold', marginBottom:'5px'}}>
-                        <BarChart2 size={14}/> TENDANCE STATISTIQUE
+    return (
+        <div style={{padding: '20px'}}>
+            <h2 style={{color:'white', marginBottom:'20px'}}>Analyses du Jour</h2>
+            
+            {loading ? (
+                <div style={{textAlign:'center', color:'#94A3B8'}}>Chargement des données...</div>
+            ) : upcomingMatches.length > 0 ? (
+                upcomingMatches.map(m => (
+                <div key={m.id} style={{
+                    background: 'white', borderRadius: '12px', padding: '15px', marginBottom: '15px',
+                    borderLeft: '4px solid #3B82F6', color: '#1E293B'
+                }}>
+                    <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.8rem', color:'#64748B', marginBottom:'10px'}}>
+                        <span>{m.competition.name}</span>
+                        <span>{new Date(m.utcDate).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                     </div>
-                    <div style={{color:'#475569'}}>
-                        Basé sur les 5 derniers matchs, {m.homeTeam.shortName} montre une solidité défensive. Match serré prévu.
+                    
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', fontWeight:'bold', fontSize:'1rem', marginBottom:'15px'}}>
+                        <span>{m.homeTeam.shortName}</span>
+                        <span style={{color:'#94A3B8', fontSize:'0.8rem'}}>vs</span>
+                        <span>{m.awayTeam.shortName}</span>
+                    </div>
+
+                    {/* Section Analyse "Teaser" */}
+                    <div style={{background:'#F1F5F9', padding:'10px', borderRadius:'8px', fontSize:'0.85rem'}}>
+                        <div style={{display:'flex', alignItems:'center', gap:'5px', color:'#3B82F6', fontWeight:'bold', marginBottom:'5px'}}>
+                            <BarChart2 size={14}/> TENDANCE STATISTIQUE
+                        </div>
+                        <div style={{color:'#475569'}}>
+                            Analyse de la forme récente et des confrontations directes disponible.
+                        </div>
                     </div>
                 </div>
-            </div>
-        )) : <div style={{textAlign:'center', color:'#94A3B8'}}>Chargement des matchs...</div>}
-    </div>
-  );
+            ))) : (
+                <div style={{textAlign:'center', color:'#94A3B8', background:'rgba(255,255,255,0.05)', padding:'20px', borderRadius:'12px'}}>
+                    <Calendar size={40} style={{marginBottom:'10px', opacity:0.5}}/>
+                    <p>Aucun match analysable pour le moment.</p>
+                </div>
+            )}
+        </div>
+    );
+  };
 
   // 3. VIP (Analyses Poussées)
   const renderVIP = () => (
@@ -134,6 +148,7 @@ export default function Dashboard() {
         <div style={{textAlign:'center', marginBottom:'30px'}}>
             <Crown size={40} color="#FFD700" style={{marginBottom:'10px'}}/>
             <h2 style={{color:'#FFD700', fontSize:'1.5rem', fontWeight:'900'}}>ZONE EXPERT</h2>
+            {/* CORRECTION DU BUG ICI : On utilise &gt; au lieu de > */}
             <p style={{color:'#94A3B8', fontSize:'0.9rem'}}>Probabilités &gt; 70% • Analyses Tactiques</p>
         </div>
 
