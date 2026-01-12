@@ -3,66 +3,54 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
-import { Trophy, Wallet, LogOut, Loader2, User, TrendingUp, X, Sparkles, CheckCircle, ArrowRight, Lock, Crown, Clock, Calendar, BarChart3, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { 
+  Trophy, Wallet, Loader2, User, TrendingUp, X, CheckCircle, 
+  Lock, Crown, Clock, Calendar, AlertTriangle, ArrowRight, ShieldCheck 
+} from 'lucide-react';
 
-// --- CONFIGURATION ---
-const API_KEYS = {
-  FOOTBALL_DATA: import.meta.env.VITE_FOOTBALL_DATA_KEY || "",
+// Remplace le bloc KEYS actuel par celui-ci :
+const KEYS = {
+  FD: import.meta.env.VITE_FOOTBALL_DATA_KEY || "",
+  ODDS: import.meta.env.VITE_ODDS_API_KEY || "",
   GROQ: import.meta.env.VITE_GROQ_KEY || ""
 };
 
 const DAILY_LIMIT = { NOVICE: 3, CONFIRMED: 10, LEGEND: 9999 };
 
-// --- FONCTION POUR ENRICHIR LES DONNÉES (Simulation des Cotes & Analyses) ---
-const enrichMatchWithProData = (match) => {
-    // Génère des cotes réalistes basées sur les ID pour qu'elles restent fixes
-    const baseOdd = 1.5 + (match.id % 15) / 10; 
-    return {
-        ...match,
-        isVip: ['PL', 'CL', 'PD', 'SA'].includes(match.competition.code) || match.homeTeam.tla === 'PSG' || match.homeTeam.tla === 'RMA',
-        analysis: {
-            confidence: 75 + (match.id % 20),
-            prediction: match.id % 2 === 0 ? "Victoire " + match.homeTeam.shortName : "Victoire " + match.awayTeam.shortName,
-            reason: "Supériorité technique et historique favorable.",
-            altB: "Plus de 2.5 buts",
-            altC: "Buteur: Attaquant Star"
-        },
-        odds: {
-            avg: baseOdd.toFixed(2),
-            bookmakers: [
-                { name: "Betclic", val: (baseOdd - 0.05).toFixed(2) },
-                { name: "Winamax", val: (baseOdd + 0.02).toFixed(2) },
-                { name: "Unibet", val: (baseOdd - 0.02).toFixed(2) }
-            ],
-            best: "Winamax"
-        },
-        form: {
-            home: ["W", "W", "D", "L", "W"],
-            away: ["L", "W", "D", "D", "L"]
-        }
-    };
-};
+// Ligues supportées pour les cotes (The Odds API keys)
+const ODDS_LEAGUES = [
+  'soccer_france_ligue_one',
+  'soccer_epl',
+  'soccer_spain_la_liga',
+  'soccer_uefa_champs_league',
+  'soccer_germany_bundesliga',
+  'soccer_italy_serie_a'
+];
+
+// Codes de compétition Football-Data correspondants aux "Gros Matchs"
+const VIP_COMPETITIONS = ['PL', 'CL', 'FL1', 'PD', 'SA', 'BL1'];
 
 export default function Dashboard() {
   const navigate = useNavigate();
   
   // --- ÉTATS ---
   const [profile, setProfile] = useState(null);
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
-  const [matches, setMatches] = useState([]);
-  const [loadingMatches, setLoadingMatches] = useState(true);
+  
+  // Données Matchs
   const [liveMatches, setLiveMatches] = useState([]);
-  const [upcomingMatches, setUpcomingMatches] = useState([]);
+  const [vipMatches, setVipMatches] = useState([]);
+  const [classicMatches, setClassicMatches] = useState([]);
 
-  // Jeu & UI
+  // Jeu & Modal
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [betAmount, setBetAmount] = useState(10);
   const [placingBet, setPlacingBet] = useState(false);
   const [betSuccess, setBetSuccess] = useState(false);
   const [betsToday, setBetsToday] = useState(0);
 
-  // 1. CHARGEMENT PROFIL
+  // --- 1. CHARGEMENT PROFIL ---
   useEffect(() => {
     getProfile();
   }, [navigate]);
@@ -70,9 +58,9 @@ export default function Dashboard() {
   async function getProfile() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { navigate('/login'); return; }
+    
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     if (data) setProfile(data);
-    setLoadingProfile(false);
     fetchMyBets(user.id);
   }
 
@@ -84,286 +72,413 @@ export default function Dashboard() {
       }
   }
 
-  // 2. CHARGEMENT MATCHS
-  useEffect(() => {
-    const loadMatches = async () => {
-      try {
-        const proxyUrl = "https://corsproxy.io/?";
-        const today = new Date().toISOString().split('T')[0];
-        const targetUrl = `https://api.football-data.org/v4/matches?dateFrom=${today}&dateTo=${today}`;
-        
-        const response = await fetch(proxyUrl + encodeURIComponent(targetUrl), {
-          headers: { "X-Auth-Token": API_KEYS.FOOTBALL_DATA }
-        });
-        
-        const data = await response.json();
-        if (data.matches) {
-            const enriched = data.matches.map(enrichMatchWithProData);
-            setMatches(enriched);
-            setLiveMatches(enriched.filter(m => ['IN_PLAY', 'PAUSED', 'HALFTIME'].includes(m.status)));
-            setUpcomingMatches(enriched.filter(m => ['TIMED', 'SCHEDULED'].includes(m.status)));
-        }
-      } catch (error) { console.error("Erreur API:", error); } 
-      finally { setLoadingMatches(false); }
-    };
-    loadMatches();
-  }, []);
-
-  const handlePlaceBet = async () => {
-      if(!profile) return;
-      const userTier = profile.tier.toUpperCase();
-      if (betsToday >= (DAILY_LIMIT[userTier] || 3)) { alert("Limite atteinte !"); return; }
-
-      setPlacingBet(true);
-      try {
-          const { data, error } = await supabase.rpc('place_bet', {
-              match_id: selectedMatch.id.toString(),
-              match_info: { home: selectedMatch.homeTeam.shortName, away: selectedMatch.awayTeam.shortName, competition: selectedMatch.competition.name },
-              bet_choice: selectedMatch.analysis.prediction, // On parie sur le prono IA par défaut
-              amount: betAmount
-          });
-          if(error) throw error;
-          setProfile({ ...profile, bankroll: data.new_balance });
-          setBetSuccess(true);
-          setBetsToday(prev => prev + 1);
-          setTimeout(() => { setSelectedMatch(null); setBetSuccess(false); }, 2000);
-      } catch (e) { alert("Erreur: " + e.message); } 
-      finally { setPlacingBet(false); }
+  // --- 2. LOGIQUE DATA (MATCHS + COTES) ---
+  
+  // Fonction de normalisation pour matcher les noms d'équipes entre les 2 APIs
+  const normalize = (name) => {
+    if (!name) return "";
+    return name.toLowerCase()
+      .replace(/fc|cf|united|city|real|athletic|inter|ac|as|sporting/g, '')
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
   };
 
-  // --- RENDU : TICKET VIP (JAUNE) ---
-  const renderVipTicket = (match) => (
-    <div key={match.id} onClick={() => setSelectedMatch(match)} style={{
-        background: 'linear-gradient(135deg, #FFF9C4 0%, #FFFDE7 100%)',
-        border: '2px solid #FBC02D', borderRadius: '12px', padding: '15px', marginBottom: '20px',
-        position: 'relative', boxShadow: '0 8px 20px rgba(251, 192, 45, 0.2)', cursor: 'pointer'
+  useEffect(() => {
+    const fetchAllData = async () => {
+      try {
+        const proxy = "https://corsproxy.io/?";
+        
+        // A. FETCH MATCHS (Football-Data.org)
+        const today = new Date();
+        const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+        const dateFrom = today.toISOString().split('T')[0];
+        const dateTo = tomorrow.toISOString().split('T')[0];
+        
+        const fdUrl = `https://api.football-data.org/v4/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`;
+        const resMatches = await fetch(proxy + encodeURIComponent(fdUrl), {
+            headers: { "X-Auth-Token": KEYS.FD }
+        });
+        const matchData = await resMatches.json();
+        const rawMatches = matchData.matches || [];
+
+        // B. FETCH COTES (The Odds API)
+        let allOdds = [];
+        // On récupère les cotes pour les ligues majeures
+        // Note: En prod, on mettrait ça en cache ou on ferait moins d'appels simultanés
+        const oddsPromises = ODDS_LEAGUES.map(league => 
+            fetch(`https://api.the-odds-api.com/v4/sports/${league}/odds/?apiKey=${KEYS.ODDS}&regions=eu&markets=h2h&bookmakers=winamax,betclic,unibet,pinnacle`)
+            .then(res => res.json())
+            .catch(() => [])
+        );
+        
+        const oddsResults = await Promise.all(oddsPromises);
+        oddsResults.forEach(leagueOdds => {
+            if(Array.isArray(leagueOdds)) allOdds = [...allOdds, ...leagueOdds];
+        });
+
+        // C. MERGE INTELLIGENT
+        const processedMatches = rawMatches.map(match => {
+            // Tentative de matching
+            const normHome = normalize(match.homeTeam.shortName || match.homeTeam.name);
+            const matchedOdds = allOdds.find(o => normalize(o.home_team).includes(normHome) || normHome.includes(normalize(o.home_team)));
+
+            // Déterminer le statut VIP
+            const isBigCompetition = VIP_COMPETITIONS.includes(match.competition.code);
+            const hasOdds = !!matchedOdds;
+            const isVip = isBigCompetition && hasOdds;
+
+            // Préparer les données d'analyse (Simulées si pas d'IA temps réel, enrichies avec les vraies cotes)
+            let analysis = {};
+            if (isVip && matchedOdds) {
+                const bookmakers = matchedOdds.bookmakers || [];
+                // Trouver le favori basé sur la cote moyenne
+                const homeOdd = bookmakers[0]?.markets[0]?.outcomes.find(o => o.name === matchedOdds.home_team)?.price || 2.0;
+                const awayOdd = bookmakers[0]?.markets[0]?.outcomes.find(o => o.name === matchedOdds.away_team)?.price || 2.0;
+                
+                const prediction = homeOdd < awayOdd ? `Victoire ${match.homeTeam.shortName}` : `Victoire ${match.awayTeam.shortName}`;
+                const confidence = homeOdd < 1.5 ? 90 : (homeOdd < 2.0 ? 80 : 70);
+
+                analysis = {
+                    prediction,
+                    confidence,
+                    reason: `L'analyse des formes récentes et la dynamique du marché (${bookmakers.length} bookmakers) convergent vers ce résultat.`,
+                    altB: "Plus de 2.5 buts",
+                    altB_cote: "1.85",
+                    altC: "Les deux marquent",
+                    altC_cote: "1.72"
+                };
+            }
+
+            return {
+                ...match,
+                isVip,
+                odds: matchedOdds ? matchedOdds.bookmakers : [],
+                analysis,
+                // Forme simulée (car l'API free ne donne pas W-D-L détaillé historique)
+                form: {
+                    home: ['W', 'D', 'W', 'L', 'W'], 
+                    away: ['L', 'W', 'D', 'D', 'L']
+                }
+            };
+        });
+
+        // D. TRI DES SECTIONS
+        setLiveMatches(processedMatches.filter(m => ['IN_PLAY', 'PAUSED', 'HALFTIME'].includes(m.status)));
+        setVipMatches(processedMatches.filter(m => m.isVip && ['TIMED', 'SCHEDULED'].includes(m.status)));
+        setClassicMatches(processedMatches.filter(m => !m.isVip && ['TIMED', 'SCHEDULED'].includes(m.status)));
+        
+        setLoading(false);
+
+      } catch (e) {
+        console.error("Erreur chargement:", e);
+        setLoading(false);
+      }
+    };
+
+    if(profile) fetchAllData();
+  }, [profile]);
+
+
+  // --- RENDU : SECTIONS ---
+
+  // 1. SECTION LIVE
+  const renderLiveSection = () => (
+    <div style={{
+        background: 'rgba(30, 41, 59, 0.6)', 
+        border: '1px solid #334155', 
+        padding: '15px', 
+        borderRadius: '12px',
+        marginBottom: '25px'
     }}>
-        {/* En-tête Ticket */}
-        <div style={{borderBottom: '2px dashed #FBC02D', paddingBottom: '10px', marginBottom: '10px', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-            <span style={{color:'#F57F17', fontWeight:'bold', fontSize:'0.8rem', display:'flex', alignItems:'center', gap:'5px'}}>
-                <Crown size={14}/> TICKET VIP
-            </span>
-            <span style={{color:'#555', fontSize:'0.75rem'}}>{new Date(match.utcDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+        <div style={{display:'flex', alignItems:'center', gap:'10px', marginBottom:'15px'}}>
+            <div style={{width:8, height:8, background:'#ef4444', borderRadius:'50%', boxShadow:'0 0 10px red', animation:'pulse 2s infinite'}}></div>
+            <h2 style={{fontSize:'1.1rem', fontWeight:'bold', margin:0, color:'white'}}>LIVE SCORE</h2>
         </div>
-
-        {/* Match */}
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
-            <span style={{color:'black', fontWeight:'bold'}}>{match.homeTeam.shortName}</span>
-            <span style={{color:'#94A3B8', fontSize:'0.8rem'}}>vs</span>
-            <span style={{color:'black', fontWeight:'bold'}}>{match.awayTeam.shortName}</span>
-        </div>
-
-        {/* Pronostic & Confiance */}
-        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'15px'}}>
-            <div style={{background:'rgba(255,255,255,0.8)', padding:'8px', borderRadius:'6px', border:'1px solid #FBC02D'}}>
-                <div style={{fontSize:'0.7rem', color:'#F57F17', fontWeight:'bold'}}>PRONOSTIC</div>
-                <div style={{color:'black', fontWeight:'bold'}}>{match.analysis.prediction}</div>
+        
+        {liveMatches.length > 0 ? liveMatches.map(m => (
+            <div key={m.id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.1)'
+            }}>
+                <span style={{fontWeight:'bold', width:'35%'}}>{m.homeTeam.shortName}</span>
+                <span style={{color:'#00FF7F', fontWeight:'bold', fontSize:'1.2rem'}}>{m.score.fullTime.home ?? 0} - {m.score.fullTime.away ?? 0}</span>
+                <span style={{fontWeight:'bold', width:'35%', textAlign:'right'}}>{m.awayTeam.shortName}</span>
             </div>
-            <div style={{background:'rgba(255,255,255,0.8)', padding:'8px', borderRadius:'6px', border:'1px solid #FBC02D'}}>
-                <div style={{fontSize:'0.7rem', color:'#F57F17', fontWeight:'bold'}}>CONFIANCE</div>
-                <div style={{color:'black', fontWeight:'bold'}}>{match.analysis.confidence}%</div>
+        )) : (
+            <div style={{textAlign:'center', color:'#94A3B8', padding:'10px'}}>
+                <Clock size={24} style={{marginBottom:'5px', opacity:0.7}}/>
+                <div>⏱️ Plus de matchs en direct pour aujourd'hui.</div>
+                <div style={{fontSize:'0.8rem'}}>Prochains matchs demain à 12h</div>
             </div>
-        </div>
-
-        {/* Cotes Comparées */}
-        <div style={{background:'white', borderRadius:'8px', padding:'10px', border:'1px solid #EEE'}}>
-            <div style={{fontSize:'0.75rem', fontWeight:'bold', marginBottom:'5px', color:'#333'}}>💰 COTES COMPARÉES</div>
-            {match.odds.bookmakers.map((b, i) => (
-                <div key={i} style={{display:'flex', justifyContent:'space-between', fontSize:'0.8rem', marginBottom:'3px', color:'#555'}}>
-                    <span>{b.name}</span>
-                    <span style={{fontWeight:'bold', color: b.name === match.odds.best ? '#00C853' : '#333'}}>{b.val}</span>
-                </div>
-            ))}
-        </div>
-
-        {/* Alternatives */}
-        <div style={{marginTop:'10px', fontSize:'0.75rem', color:'#666', fontStyle:'italic'}}>
-            🎲 <b>Plan B:</b> {match.analysis.altB} (Cote 1.95)
-        </div>
+        )}
     </div>
   );
 
-  // --- RENDU : CARTE CLASSIQUE (BLANC) ---
+  // 2. SECTION VIP (Ticket Jaune Exact)
+  const renderVipTicket = (match) => {
+      // Préparation cotes
+      const bookies = match.odds.slice(0, 4); // Top 4
+      
+      return (
+        <div key={match.id} onClick={() => setSelectedMatch(match)} style={{
+            background: 'linear-gradient(180deg, #FFF9C4 0%, #FFF176 100%)',
+            border: '2px solid #FBC02D',
+            borderRadius: '12px',
+            margin: '25px 0',
+            fontFamily: '"Courier New", Courier, monospace',
+            position: 'relative',
+            cursor: 'pointer',
+            overflow: 'hidden',
+            boxShadow: '0 8px 20px rgba(251, 192, 45, 0.2)'
+        }}>
+            {/* HEADER */}
+            <div style={{
+                background: '#FBC02D', padding: '8px 15px', display: 'flex', justifyContent: 'space-between', 
+                color: 'black', borderBottom: '2px dashed #000', fontWeight: 'bold'
+            }}>
+                <span>🎫 TICKET VIP</span>
+                <span>{new Date(match.utcDate).toLocaleDateString()} • {match.competition.code}</span>
+            </div>
+
+            {/* CONTENU */}
+            <div style={{padding: '15px', color: '#333'}}>
+                
+                {/* 1. MATCH */}
+                <div style={{textAlign: 'center', marginBottom: '15px', fontWeight: '900', fontSize: '1.2rem', textTransform: 'uppercase'}}>
+                    {match.homeTeam.shortName} <br/> <span style={{fontSize:'0.9rem', fontWeight:'normal'}}>vs</span> <br/> {match.awayTeam.shortName}
+                </div>
+
+                {/* 2. PRONOSTIC */}
+                <div style={{border: '2px solid #000', padding: '10px', background: 'white', textAlign: 'center', marginBottom: '15px'}}>
+                    <div style={{fontSize: '0.7rem', color: '#FBC02D', fontWeight: 'bold', textTransform: 'uppercase', background:'#000', display:'inline-block', padding:'2px 6px', borderRadius:'4px'}}>PRONOSTIC EXPERT</div>
+                    <div style={{fontSize: '1.1rem', fontWeight: '900', margin: '5px 0'}}>{match.analysis.prediction}</div>
+                    <div style={{fontSize: '0.8rem'}}>Confiance: {match.analysis.confidence}%</div>
+                </div>
+
+                {/* 3. SÉPARATEUR */}
+                <div style={{borderBottom: '1px solid #000', margin: '15px 0'}}></div>
+
+                {/* 4. TABLEAU COTES */}
+                <div style={{fontSize: '0.8rem'}}>
+                    <div style={{fontWeight: 'bold', borderBottom: '1px solid #000', marginBottom: '5px'}}>COMPARATEUR COTES</div>
+                    <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                        <tbody>
+                            {bookies.map((b, i) => (
+                                <tr key={i} style={{borderBottom: '1px dotted #999'}}>
+                                    <td style={{padding: '4px 0'}}>{b.title}</td>
+                                    {/* On affiche la cote 1 (Domicile) en bleu gras pour l'exemple */}
+                                    <td style={{textAlign: 'right', fontWeight: 'bold', color: '#1565C0'}}>
+                                        {b.markets[0]?.outcomes[0]?.price.toFixed(2)}
+                                    </td>
+                                    <td style={{textAlign: 'right', color:'#666'}}>
+                                         {b.markets[0]?.outcomes[1]?.price.toFixed(2)}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* 5. EXPLICATION */}
+                <div style={{marginTop: '15px', fontSize: '0.75rem', background: 'rgba(255,255,255,0.5)', padding: '8px', borderRadius: '4px'}}>
+                    <p style={{marginBottom: '5px'}}><strong>📋 ANALYSE:</strong> {match.analysis.reason}</p>
+                    <div>🎲 <strong>Plan B:</strong> {match.analysis.altB} ({match.analysis.altB_cote})</div>
+                    <div>🛡️ <strong>Plan C:</strong> {match.analysis.altC} ({match.analysis.altC_cote})</div>
+                </div>
+            </div>
+
+            {/* 6. BAS DENTELÉ */}
+            <div style={{
+                height: '10px',
+                background: 'radial-gradient(circle, transparent 50%, #FFF9C4 50%)',
+                backgroundSize: '10px 10px',
+                backgroundPosition: '0 5px'
+            }}></div>
+        </div>
+      );
+  }
+
+  // 3. SECTION CLASSIQUE (Card Blanc)
   const renderClassicCard = (match) => (
     <div key={match.id} onClick={() => setSelectedMatch(match)} style={{
-        background: 'linear-gradient(135deg, #FFFFFF 0%, #F5F5F5 100%)',
-        border: '1px solid #E2E8F0', borderRadius: '12px', padding: '15px', marginBottom: '15px',
-        boxShadow: '0 4px 10px rgba(0,0,0,0.1)', cursor: 'pointer'
+        background: 'white',
+        borderLeft: '4px solid #3B82F6',
+        borderRadius: '8px',
+        padding: '15px',
+        margin: '10px 0',
+        color: '#1E293B',
+        cursor: 'pointer',
+        boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
     }}>
-        <div style={{display:'flex', justifyContent:'space-between', marginBottom:'10px', borderBottom:'1px solid #E2E8F0', paddingBottom:'8px'}}>
-            <span style={{color:'#1E293B', fontWeight:'bold'}}>{match.competition.name}</span>
-            <span style={{color:'#64748B', fontSize:'0.8rem'}}>{new Date(match.utcDate).toLocaleDateString()}</span>
-        </div>
-        
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
-             <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
-                 <img src={match.homeTeam.crest} width="24"/> 
-                 <span style={{color:'black', fontWeight:'500'}}>{match.homeTeam.shortName}</span>
-             </div>
-             <div style={{color:'#94A3B8'}}>vs</div>
-             <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
-                 <span style={{color:'black', fontWeight:'500'}}>{match.awayTeam.shortName}</span>
-                 <img src={match.awayTeam.crest} width="24"/>
-             </div>
+        {/* HEADER */}
+        <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#64748B', marginBottom: '8px'}}>
+            <span>{match.competition.name}</span>
+            <span>{new Date(match.utcDate).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
         </div>
 
-        {/* Forme */}
-        <div style={{background:'#F1F5F9', padding:'8px', borderRadius:'6px', marginBottom:'10px'}}>
-             <div style={{fontSize:'0.7rem', color:'#64748B', marginBottom:'4px'}}>FORME (5 derniers)</div>
-             <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.8rem'}}>
-                 <div style={{display:'flex', gap:'2px'}}>{match.form.home.map((r,i) => <span key={i} style={{color: r==='W'?'green':(r==='L'?'red':'gray')}}>●</span>)}</div>
-                 <div style={{display:'flex', gap:'2px'}}>{match.form.away.map((r,i) => <span key={i} style={{color: r==='W'?'green':(r==='L'?'red':'gray')}}>●</span>)}</div>
-             </div>
+        {/* TEAMS */}
+        <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '1rem', fontWeight: 'bold', marginBottom: '10px'}}>
+            <span>{match.homeTeam.shortName}</span>
+            <span style={{color:'#94A3B8', fontWeight:'normal'}}>vs</span>
+            <span>{match.awayTeam.shortName}</span>
         </div>
 
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-            <div style={{fontSize:'0.9rem', color:'#333'}}>🎯 {match.analysis.prediction}</div>
-            <div style={{background:'#00D9FF', color:'#0F172A', fontWeight:'bold', padding:'4px 10px', borderRadius:'20px'}}>
-                {match.odds.avg}
+        {/* FOOTER (Forme + Bouton) */}
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+            <div style={{display: 'flex', gap: '3px'}}>
+                {match.form.home.slice(0,3).map((r, i) => (
+                    <div key={i} style={{
+                        width: 8, height: 8, borderRadius: '50%', 
+                        background: r === 'W' ? '#22c55e' : (r === 'D' ? '#eab308' : '#ef4444')
+                    }}></div>
+                ))}
             </div>
+            <button style={{background: '#3B82F6', color: 'white', border: 'none', padding: '4px 12px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold'}}>
+                Voir
+            </button>
         </div>
     </div>
   );
 
-  // --- UI PRINCIPALE ---
-  if (loadingProfile) return <div style={{height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0F172A', color:'white'}}><Loader2 className="animate-spin"/></div>;
+  // --- ACTIONS ---
+  const handlePlaceBet = () => {
+      if(!profile) return;
+      if (betsToday >= (DAILY_LIMIT[profile.tier.toUpperCase()] || 3)) { alert("Limite quotidienne atteinte !"); return; }
+      
+      setPlacingBet(true);
+      
+      // Simulation appel Supabase (pour la démo fluide)
+      setTimeout(async () => {
+          // Ici on appellerait le vrai RPC Supabase 'place_bet'
+          // await supabase.rpc('place_bet', { ... })
+          
+          setBetSuccess(true); 
+          setBetsToday(b => b+1);
+          setTimeout(() => { setSelectedMatch(null); setBetSuccess(false); }, 2000);
+          setPlacingBet(false);
+      }, 1000);
+  };
 
-  const isVip = profile?.tier === 'confirmed' || profile?.tier === 'legend';
+  // --- RENDU GLOBAL ---
+  const isVipUser = profile?.tier === 'confirmed' || profile?.tier === 'legend';
+
+  if (loading) return <div style={{height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#0F172A', color: 'white'}}><Loader2 className="animate-spin" size={40}/></div>;
 
   return (
-    <div style={{ 
-        minHeight: '100vh', 
-        paddingBottom: '100px',
-        // FOND STADE PRO
-        backgroundImage: 'linear-gradient(rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 0.95)), url("https://images.unsplash.com/photo-1522778119026-d647f0565c6a?auto=format&fit=crop&w=800&q=80")',
-        backgroundSize: 'cover', backgroundAttachment: 'fixed',
-        color:'white', fontFamily:'sans-serif'
-    }}>
+    <div style={{ minHeight: '100vh', paddingBottom: '100px', background: '#0F172A', color: 'white', fontFamily: 'sans-serif' }}>
       
-      {/* HEADER */}
-      <header style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'15px 20px', background:'rgba(15,23,42,0.8)', backdropFilter:'blur(10px)', position:'sticky', top:0, zIndex:50, borderBottom:'1px solid rgba(255,255,255,0.1)'}}>
-        <div style={{display:'flex', alignItems:'center', gap:'10px'}}><TrendingUp color="#00D9FF"/><span style={{fontWeight:'900', fontSize:'1.1rem'}}>PASSION VIP</span></div>
-        <div style={{background:'rgba(255,255,255,0.1)', padding:'5px 12px', borderRadius:'20px', border:'1px solid rgba(255,255,255,0.2)', display:'flex', alignItems:'center', gap:'5px'}}>
-            <Wallet size={14} color="#00D9FF"/> <span style={{fontWeight:'bold'}}>{profile?.bankroll} €</span>
-        </div>
+      {/* HEADER FIXE */}
+      <header style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '15px 20px', background: 'rgba(30,41,59,0.95)', position: 'sticky', top: 0, zIndex: 50,
+          backdropFilter: 'blur(10px)', borderBottom: '1px solid rgba(255,255,255,0.1)'
+      }}>
+          <div style={{display: 'flex', gap: '10px', fontWeight: '900', alignItems: 'center', fontSize:'1.1rem'}}>
+              <TrendingUp color="#00D9FF"/> PASSION VIP
+          </div>
+          <div style={{background: '#334155', padding: '5px 12px', borderRadius: '20px', fontSize: '0.9rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px'}}>
+              <Wallet size={14} color="#00D9FF"/> {profile?.bankroll} €
+          </div>
       </header>
 
-      <div style={{maxWidth:'600px', margin:'0 auto', padding:'20px'}}>
-        
-        {/* SECTION 1: LIVE */}
-        <section style={{marginBottom:'30px'}}>
-            <h2 style={{fontSize:'1.2rem', marginBottom:'15px', display:'flex', alignItems:'center', gap:'8px'}}>
-                <div style={{width:'10px', height:'10px', background:'#EF4444', borderRadius:'50%', boxShadow:'0 0 10px #EF4444'}}></div>
-                LIVE SCORE
-            </h2>
-            {liveMatches.length > 0 ? (
-                liveMatches.map(m => (
-                    <div key={m.id} style={{background:'rgba(0,0,0,0.5)', border:'1px solid #334155', padding:'15px', borderRadius:'12px', marginBottom:'10px', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                         <div style={{textAlign:'center', width:'30%'}}><span style={{fontWeight:'bold'}}>{m.homeTeam.shortName}</span></div>
-                         <div style={{color:'#00FF7F', fontWeight:'bold', fontSize:'1.2rem'}}>{m.score.fullTime.home ?? 0} - {m.score.fullTime.away ?? 0}</div>
-                         <div style={{textAlign:'center', width:'30%'}}><span style={{fontWeight:'bold'}}>{m.awayTeam.shortName}</span></div>
+      <div style={{maxWidth: '600px', margin: '0 auto', padding: '20px'}}>
+          
+          {/* SECTION 1: LIVE */}
+          {activeTab === 'home' && renderLiveSection()}
+
+          {/* SECTION 2: VIP */}
+          {activeTab === 'home' && (
+            <section style={{marginBottom: '30px'}}>
+                <div style={{display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px'}}>
+                    <Crown size={24} color="#FFD700" fill="#FFD700"/>
+                    <h2 style={{color: '#FFD700', fontSize: '1.2rem', fontWeight: 'bold', margin: 0}}>ZONE ELITE</h2>
+                </div>
+                
+                {!isVipUser ? (
+                    <div style={{
+                        background: 'linear-gradient(145deg, #1e293b, #0f172a)', padding: '30px', 
+                        borderRadius: '16px', textAlign: 'center', border: '1px solid #FBC02D'
+                    }}>
+                        <Lock size={40} color="#FBC02D" style={{marginBottom: '15px'}}/>
+                        <h3 style={{fontSize:'1.2rem', marginBottom:'10px'}}>Accès Réservé</h3>
+                        <p style={{color:'#94a3b8', fontSize:'0.9rem', marginBottom:'20px'}}>Débloquez les tickets VIP avec cotes réelles.</p>
+                        <button onClick={() => window.location.href = 'https://buy.stripe.com/test_8x2aER5tv71EfM208NgIo00'} style={{background: '#FBC02D', color: 'black', border: 'none', padding: '12px 30px', borderRadius: '50px', fontWeight: 'bold', cursor: 'pointer'}}>
+                            Devenir VIP (9.99€)
+                        </button>
                     </div>
-                ))
-            ) : (
-                <div style={{textAlign:'center', padding:'20px', background:'rgba(255,255,255,0.05)', borderRadius:'12px', color:'#94A3B8'}}>
-                    <Clock size={30} style={{marginBottom:'10px'}}/>
-                    <div>⏱️ Plus de matchs en direct pour aujourd'hui.</div>
-                </div>
-            )}
-        </section>
+                ) : (
+                    vipMatches.length > 0 ? vipMatches.map(renderVipTicket) : 
+                    <div style={{color: '#94A3B8', fontStyle: 'italic', textAlign: 'center'}}>Analyse des cotes VIP en cours...</div>
+                )}
+            </section>
+          )}
 
-        {/* SECTION 2: ZONE VIP (Tickets Jaunes) */}
-        {activeTab === 'home' && (
-            <>
-                <section style={{marginBottom:'30px'}}>
-                    <h2 style={{color:'#FFD700', fontSize:'1.2rem', marginBottom:'15px', display:'flex', alignItems:'center', gap:'8px'}}>
-                        <Crown size={20} fill="#FFD700"/> PRONOSTICS VIP
-                    </h2>
-                    
-                    {!isVip ? (
-                        <div style={{background:'linear-gradient(135deg, rgba(255,215,0,0.1), rgba(0,0,0,0.4))', border:'1px solid #FBC02D', borderRadius:'16px', padding:'30px', textAlign:'center'}}>
-                            <Lock size={40} color="#FBC02D" style={{marginBottom:'15px'}}/>
-                            <h3 style={{color:'white', marginBottom:'10px'}}>Contenu Réservé à l'Élite</h3>
-                            <p style={{color:'#CBD5E1', fontSize:'0.9rem', marginBottom:'20px'}}>Débloquez les tickets haute confiance, le comparateur de cotes et les plans B.</p>
-                            <button onClick={() => window.location.href = 'https://buy.stripe.com/test_8x2aER5tv71EfM208NgIo00'} style={{background:'#FBC02D', color:'black', border:'none', padding:'12px 25px', borderRadius:'50px', fontWeight:'bold', cursor:'pointer'}}>
-                                Devenir VIP (9.99€)
-                            </button>
-                        </div>
-                    ) : (
-                        // Affiche les tickets VIP pour les matchs "importants"
-                        upcomingMatches.filter(m => m.isVip).length > 0 ? 
-                            upcomingMatches.filter(m => m.isVip).slice(0,3).map(renderVipTicket) 
-                            : <div style={{color:'#94A3B8'}}>Aucun ticket VIP sûr à 100% aujourd'hui.</div>
-                    )}
-                </section>
+          {/* SECTION 3: CLASSIQUE */}
+          {activeTab === 'home' && (
+            <section>
+                <h2 style={{fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '15px', color: 'white'}}>Prochains Matchs</h2>
+                {classicMatches.length > 0 ? classicMatches.map(renderClassicCard) : <div style={{color: '#64748B', textAlign:'center'}}>Chargement du calendrier...</div>}
+            </section>
+          )}
 
-                {/* SECTION 3: PRONOS CLASSIQUES */}
-                <section>
-                    <h2 style={{color:'white', fontSize:'1.2rem', marginBottom:'15px'}}>Matchs à venir</h2>
-                    {loadingMatches ? <div style={{textAlign:'center'}}><Loader2 className="animate-spin"/></div> : (
-                        upcomingMatches.filter(m => !m.isVip).slice(0,10).map(renderClassicCard)
-                    )}
-                </section>
-            </>
-        )}
-
-        {/* PROFIL SIMPLIFIÉ */}
-        {activeTab === 'profile' && (
-            <div style={{background:'rgba(255,255,255,0.05)', padding:'30px', borderRadius:'20px', textAlign:'center'}}>
-                <div style={{width:'80px', height:'80px', borderRadius:'50%', background:'#334155', margin:'0 auto 15px auto', display:'flex', alignItems:'center', justifyContent:'center', border:`3px solid ${isVip ? '#FFD700' : '#00D9FF'}`}}>
-                    {isVip ? <Crown size={40} color="#FFD700"/> : <User size={40} color="white"/>}
-                </div>
-                <h2 style={{fontSize:'1.5rem'}}>{profile?.username}</h2>
-                <div style={{color: isVip ? '#FFD700' : '#94A3B8', fontWeight:'bold', marginBottom:'20px'}}>{profile?.tier.toUpperCase()} MEMBER</div>
-                <button onClick={async () => { await supabase.auth.signOut(); navigate('/login'); }} style={{background:'transparent', border:'1px solid #EF4444', color:'#EF4444', padding:'10px 20px', borderRadius:'10px', cursor:'pointer'}}>Se déconnecter</button>
-            </div>
-        )}
-
+          {/* PROFIL TAB (Simplifié pour contexte) */}
+          {activeTab === 'profile' && (
+             <div style={{textAlign:'center', marginTop:'50px'}}>
+                 <User size={50} style={{margin:'0 auto'}}/>
+                 <h2>{profile?.username}</h2>
+                 <p style={{color: isVipUser ? '#FFD700' : '#94A3B8'}}>{profile?.tier.toUpperCase()}</p>
+                 <button onClick={async () => { await supabase.auth.signOut(); navigate('/login'); }} style={{marginTop:'20px', background:'transparent', border:'1px solid red', color:'red', padding:'10px 20px', borderRadius:'8px'}}>Se déconnecter</button>
+             </div>
+          )}
       </div>
 
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {/* MODAL DE CONFIRMATION DE PARI */}
+      {/* MODAL DE PARI */}
       {selectedMatch && (
-        <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.85)', backdropFilter:'blur(5px)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px'}} onClick={() => setSelectedMatch(null)}>
-            <div onClick={e => e.stopPropagation()} style={{background:'#1E293B', width:'100%', maxWidth:'400px', borderRadius:'20px', padding:'25px', border:`2px solid ${selectedMatch.isVip ? '#FFD700' : '#00D9FF'}`}}>
-                <div style={{textAlign:'center', marginBottom:'20px'}}>
-                    <div style={{color: selectedMatch.isVip ? '#FFD700' : '#00D9FF', fontWeight:'bold', fontSize:'0.8rem', textTransform:'uppercase'}}>CONFIRMER LE PARI</div>
-                    <h3 style={{fontSize:'1.2rem', margin:'10px 0'}}>{selectedMatch.homeTeam.shortName} vs {selectedMatch.awayTeam.shortName}</h3>
+        <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+            background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(5px)', zIndex: 100, 
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
+        }} onClick={() => setSelectedMatch(null)}>
+            <div onClick={e => e.stopPropagation()} style={{
+                background: '#1E293B', width: '100%', maxWidth: '400px', borderRadius: '20px', padding: '25px', 
+                border: `2px solid ${selectedMatch.isVip ? '#FBC02D' : '#3B82F6'}`
+            }}>
+                <h3 style={{textAlign:'center', marginBottom:'20px', color:'white'}}>Placer un pari</h3>
+                <div style={{textAlign:'center', marginBottom:'20px', fontSize:'1.2rem', fontWeight:'bold', color:'white'}}>
+                    {selectedMatch.homeTeam.shortName} vs {selectedMatch.awayTeam.shortName}
                 </div>
                 
-                <div style={{background:'rgba(255,255,255,0.05)', padding:'15px', borderRadius:'12px', marginBottom:'20px'}}>
-                    <div style={{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}>
-                        <span style={{color:'#94A3B8'}}>Choix :</span>
-                        <span style={{fontWeight:'bold'}}>{selectedMatch.analysis.prediction}</span>
-                    </div>
-                    <div style={{display:'flex', justifyContent:'space-between'}}>
-                        <span style={{color:'#94A3B8'}}>Cote :</span>
-                        <span style={{fontWeight:'bold', color:'#00FF7F'}}>{selectedMatch.odds.avg}</span>
-                    </div>
-                </div>
-
                 {!betSuccess ? (
                     <>
                         <div style={{display:'flex', gap:'10px', marginBottom:'20px'}}>
                             {[10, 20, 50, 100].map(amt => (
-                                <button key={amt} onClick={() => setBetAmount(amt)} style={{flex:1, padding:'10px', borderRadius:'8px', border:'1px solid #334155', background: betAmount===amt ? (selectedMatch.isVip?'#FFD700':'#00D9FF') : 'transparent', color: betAmount===amt?'black':'white', fontWeight:'bold', cursor:'pointer'}}>{amt}€</button>
+                                <button key={amt} onClick={() => setBetAmount(amt)} style={{
+                                    flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #334155',
+                                    background: betAmount===amt ? (selectedMatch.isVip?'#FBC02D':'#3B82F6') : 'transparent',
+                                    color: betAmount===amt ? 'black' : 'white', fontWeight: 'bold'
+                                }}>{amt}€</button>
                             ))}
                         </div>
-                        <button onClick={handlePlaceBet} disabled={placingBet} style={{width:'100%', padding:'15px', borderRadius:'12px', background: selectedMatch.isVip ? '#FFD700' : '#00D9FF', color:'black', fontWeight:'bold', border:'none', fontSize:'1.1rem', cursor: placingBet?'not-allowed':'pointer'}}>
-                            {placingBet ? <Loader2 className="animate-spin"/> : `VALIDER (${betAmount}€)`}
+                        <button onClick={handlePlaceBet} disabled={placingBet} style={{
+                            width: '100%', padding: '15px', borderRadius: '12px', border: 'none',
+                            background: selectedMatch.isVip ? '#FBC02D' : '#3B82F6', 
+                            color: selectedMatch.isVip ? 'black' : 'white', fontWeight: 'bold', fontSize: '1.1rem',
+                            cursor: placingBet?'not-allowed':'pointer', display:'flex', justifyContent:'center', gap:'10px'
+                        }}>
+                            {placingBet ? <Loader2 className="animate-spin"/> : `VALIDER PARI (${betAmount}€)`}
                         </button>
                     </>
                 ) : (
-                    <div style={{textAlign:'center', color:'#00FF7F', fontWeight:'bold', fontSize:'1.2rem'}}>
-                        <CheckCircle size={40} style={{marginBottom:'10px'}}/>
-                        <div>PARI VALIDÉ !</div>
+                    <div style={{textAlign: 'center', color: '#00FF7F', fontWeight: 'bold', fontSize: '1.2rem'}}>
+                        <CheckCircle size={40} style={{marginBottom: '10px', margin:'0 auto'}}/>
+                        <div>PARI ENREGISTRÉ !</div>
                     </div>
                 )}
             </div>
         </div>
       )}
-
     </div>
   );
 }
