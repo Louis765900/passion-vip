@@ -217,7 +217,7 @@ export default function Dashboard() {
             <div style={{background: 'linear-gradient(145deg, #1e293b, #0f172a)', padding: '30px', borderRadius: '16px', textAlign: 'center', border: '1px solid #FBC02D'}}>
                 <Lock size={40} color="#FBC02D" style={{marginBottom: '15px'}}/>
                 <h3 style={{color:'white', fontSize:'1.2rem', marginBottom:'10px'}}>Accès Réservé</h3>
-                <p style={{color:'#94a3b8', fontSize:'0.9rem', marginBottom:'20px'}}>Débloquez le Cerveau IA et les probabilités > 70%.</p>
+                <p style={{color:'#94a3b8', fontSize:'0.9rem', marginBottom:'20px'}}>Débloquez le Cerveau IA et les probabilités &gt; 70%.</p>
                 <button onClick={() => window.location.href = 'https://buy.stripe.com/test_8x2aER5tv71EfM208NgIo00'} style={{background: '#FBC02D', color: 'black', border: 'none', padding: '12px 30px', borderRadius: '50px', fontWeight: 'bold', cursor: 'pointer', fontSize:'1rem'}}>Passer Premium</button>
             </div>
         ) : (
