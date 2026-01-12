@@ -134,7 +134,7 @@ export default function Dashboard() {
         <div style={{textAlign:'center', marginBottom:'30px'}}>
             <Crown size={40} color="#FFD700" style={{marginBottom:'10px'}}/>
             <h2 style={{color:'#FFD700', fontSize:'1.5rem', fontWeight:'900'}}>ZONE EXPERT</h2>
-            <p style={{color:'#94A3B8', fontSize:'0.9rem'}}>Probabilités > 70% • Analyses Tactiques</p>
+            <p style={{color:'#94A3B8', fontSize:'0.9rem'}}>Probabilités &gt; 70% • Analyses Tactiques</p>
         </div>
 
         {!isVip ? (
