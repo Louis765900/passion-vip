@@ -20,7 +20,7 @@ export default function Dashboard() {
   // --- ÉTATS ---
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('home'); // 'home', 'vip', 'live', 'profile'
+  const [activeTab, setActiveTab] = useState('home'); 
   
   // Données Matchs
   const [matches, setMatches] = useState([]);
@@ -38,14 +38,22 @@ export default function Dashboard() {
     if (data) setProfile(data);
   }
 
-  // --- 2. RÉCUPÉRATION MATCHS (API RÉELLE) ---
+  // --- 2. RÉCUPÉRATION MATCHS (API RÉELLE - 4 JOURS) ---
   useEffect(() => {
     const fetchMatches = async () => {
       try {
         const proxy = "https://corsproxy.io/?";
-        const today = new Date().toISOString().split('T')[0];
-        // On récupère les matchs du jour
-        const url = `https://api.football-data.org/v4/matches?dateFrom=${today}&dateTo=${today}`;
+        
+        // CORRECTION ICI : On cherche sur 4 jours
+        const today = new Date();
+        const future = new Date(today);
+        future.setDate(future.getDate() + 3); // +3 jours
+
+        const dateFrom = today.toISOString().split('T')[0];
+        const dateTo = future.toISOString().split('T')[0];
+        
+        // On récupère les matchs
+        const url = `https://api.football-data.org/v4/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`;
         
         const res = await fetch(proxy + encodeURIComponent(url), {
             headers: { "X-Auth-Token": KEYS.FD }
@@ -69,7 +77,7 @@ export default function Dashboard() {
 
   // --- RENDU DES SECTIONS ---
 
-  // 1. LIVE (Scoreboard Épuré)
+  // 1. LIVE
   const renderLive = () => (
     <div style={{padding: '20px'}}>
         <h2 style={{color:'white', display:'flex', alignItems:'center', gap:'10px', marginBottom:'20px'}}>
@@ -94,26 +102,26 @@ export default function Dashboard() {
     </div>
   );
 
-  // 2. ACCUEIL / PRONOS GRATUITS (Lecture Seule)
+  // 2. ACCUEIL (Analyses)
   const renderHome = () => {
-    // On filtre les matchs à venir ou programmés
-    const upcomingMatches = matches.filter(m => m.status === 'TIMED' || m.status === 'SCHEDULED');
+    // On affiche tous les matchs récupérés (pas de filtre strict pour l'instant pour être sûr de voir qqch)
+    const displayMatches = matches;
 
     return (
         <div style={{padding: '20px'}}>
-            <h2 style={{color:'white', marginBottom:'20px'}}>Analyses du Jour</h2>
+            <h2 style={{color:'white', marginBottom:'20px'}}>Prochains Matchs</h2>
             
             {loading ? (
                 <div style={{textAlign:'center', color:'#94A3B8'}}>Chargement des données...</div>
-            ) : upcomingMatches.length > 0 ? (
-                upcomingMatches.map(m => (
+            ) : displayMatches.length > 0 ? (
+                displayMatches.map(m => (
                 <div key={m.id} style={{
                     background: 'white', borderRadius: '12px', padding: '15px', marginBottom: '15px',
                     borderLeft: '4px solid #3B82F6', color: '#1E293B'
                 }}>
                     <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.8rem', color:'#64748B', marginBottom:'10px'}}>
-                        <span>{m.competition.name}</span>
-                        <span>{new Date(m.utcDate).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                        <span style={{fontWeight:'bold'}}>{m.competition.name}</span>
+                        <span>{new Date(m.utcDate).toLocaleDateString()} à {new Date(m.utcDate).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                     </div>
                     
                     <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', fontWeight:'bold', fontSize:'1rem', marginBottom:'15px'}}>
@@ -122,33 +130,31 @@ export default function Dashboard() {
                         <span>{m.awayTeam.shortName}</span>
                     </div>
 
-                    {/* Section Analyse "Teaser" */}
                     <div style={{background:'#F1F5F9', padding:'10px', borderRadius:'8px', fontSize:'0.85rem'}}>
                         <div style={{display:'flex', alignItems:'center', gap:'5px', color:'#3B82F6', fontWeight:'bold', marginBottom:'5px'}}>
-                            <BarChart2 size={14}/> TENDANCE STATISTIQUE
+                            <BarChart2 size={14}/> ANALYSE
                         </div>
                         <div style={{color:'#475569'}}>
-                            Analyse de la forme récente et des confrontations directes disponible.
+                            Analyse technique et historique des confrontations disponible.
                         </div>
                     </div>
                 </div>
             ))) : (
                 <div style={{textAlign:'center', color:'#94A3B8', background:'rgba(255,255,255,0.05)', padding:'20px', borderRadius:'12px'}}>
                     <Calendar size={40} style={{marginBottom:'10px', opacity:0.5}}/>
-                    <p>Aucun match analysable pour le moment.</p>
+                    <p>Aucun match trouvé pour les 4 prochains jours.</p>
                 </div>
             )}
         </div>
     );
   };
 
-  // 3. VIP (Analyses Poussées)
+  // 3. VIP
   const renderVIP = () => (
     <div style={{padding: '20px'}}>
         <div style={{textAlign:'center', marginBottom:'30px'}}>
             <Crown size={40} color="#FFD700" style={{marginBottom:'10px'}}/>
             <h2 style={{color:'#FFD700', fontSize:'1.5rem', fontWeight:'900'}}>ZONE EXPERT</h2>
-            {/* CORRECTION DU BUG ICI : On utilise &gt; au lieu de > */}
             <p style={{color:'#94A3B8', fontSize:'0.9rem'}}>Probabilités &gt; 70% • Analyses Tactiques</p>
         </div>
 
@@ -170,17 +176,15 @@ export default function Dashboard() {
                 </button>
             </div>
         ) : (
-            // CONTENU VIP (Structure prête pour Phase 2)
             <div style={{textAlign:'center', color:'#94A3B8'}}>
                 <p>Bienvenue Membre VIP.</p>
-                <p>Le module d'analyse IA est en cours d'initialisation...</p>
-                {/* Ici nous insérerons le résultat du PROMPT IA dans la Phase 2 */}
+                <p>Le module d'analyse IA sera activé à la prochaine étape.</p>
             </div>
         )}
     </div>
   );
 
-  // 4. PROFIL (Gestion)
+  // 4. PROFIL
   const renderProfile = () => (
     <div style={{padding: '20px'}}>
         <h2 style={{color:'white', marginBottom:'30px'}}>Mon Compte</h2>
